@@ -366,6 +366,12 @@ class UnitBandCoverage(unittest.TestCase):
         only that it no longer owns the bright band by four times. What the
         top plane may not do is sit in that band at all, which is the
         4,280-pixel half of the finding and is pinned first.
+
+        Round 6 levelled the rows to within 0.15 pp of each other, so what
+        decides this assertion is now 0.02 pp (neutral 15.58% against iron's
+        15.60%). A flip is therefore not by itself an art defect: read it
+        against `test_no_row_out_lights_the_chromatic_band`, which is where
+        a row actually running away with the band shows up.
         """
         self.assertLess(palette.luminance(RAMPS["neutral"][palette.S_TOP]), 160.0)
         shares = self._row_bright_shares()
