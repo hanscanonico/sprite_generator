@@ -103,8 +103,9 @@ def preview(atlas: Image.Image, zoom: int = 2) -> Image.Image:
 
 # A small authored scene proving the sheet works as a map: terrain ids per
 # cell, then units placed on top with mixed factions. Roads, the river, the
-# bridge and every coastline resolve through the autotile variants, so the
-# preview shows the connected look the game gets if it adopts them.
+# bridge, every coastline and every wood's tree line resolve through the
+# autotile variants, so the preview shows the connected look the game gets if
+# it adopts them.
 _DEMO_MAP = [
     "sea    sea    sea    sea    sea    sea    sea    sea    sea    sea",
     "sea    reef   shoal  plains woods  plains river  city   port   sea",
@@ -181,6 +182,8 @@ def build_demo() -> Image.Image:
                 tile = autotile.river_tile(mask(x, y, river_joins), salt=x * 7 + y)
             elif tid == "shoal":
                 tile = autotile.shoal_tile(mask(x, y, _WATERY))
+            elif tid == "woods":
+                tile = autotile.woods_tile(mask(x, y, frozenset({"woods"})))
             elif tid == "bridge":
                 horiz = bool(mask(x, y, road_joins) & (autotile.E | autotile.W))
                 tile = autotile.bridge_tile(horiz)

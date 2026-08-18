@@ -20,6 +20,10 @@ from .voxel import place_in_cell, render
 
 CELL = 64
 
+# Connection bits, shared with autotile.py: which neighbours a tile's feature
+# continues into.
+N, E, S, W = 1, 2, 4, 8
+
 # The terrain value ceiling (fix spec round 4, item 7). The rule was not
 # merely unimplemented, it was inverted: plains sat at median L174, road L183
 # and shoal L202 while unit pixels top out at L145-165 at the 95th percentile,
@@ -62,6 +66,12 @@ CANOPY = (36, 96, 44)
 CANOPY_DK = (24, 70, 33)
 CANOPY_LT = (82, 152, 74)
 TRUNK = (109, 76, 65)
+
+# Grain salts for the two GRASS grounds. They differ so a wood's clearings do
+# not repeat the field's tufts; the tone they perturb is the one GRASS above,
+# so a woods cell and the plains it borders cannot step in value.
+PLAINS_SALT = 2
+WOODS_SALT = 3
 
 
 def luminance(c: RGB) -> float:
@@ -130,7 +140,7 @@ def road() -> Image.Image:
 
 
 def plains() -> Image.Image:
-    t = _ground(GRASS, 2)
+    t = _ground(GRASS, PLAINS_SALT)
     # grass tufts: a dark check with a light blade, like the old speckles
     # but drawn as 3px clusters
     spots = (
@@ -180,15 +190,39 @@ _CROWNS = (
 )
 
 
-def woods() -> Image.Image:
+def _crowns_within(open_edges: int) -> tuple[tuple[int, int, int], ...]:
+    """The crown table with every disc pulled fully inside the cell on the
+    edges the wood does not continue across, so a crown is never sliced flat
+    by the tile border. A pulled crown stays tangent to that border, so the
+    fringe scallops between crowns instead of gapping away from it. Crowns
+    keep their authored overhang on a continued edge, which is what lets the
+    interior of a wood butt seamlessly."""
+    pulled = []
+    for cx, cy, r in _CROWNS:
+        if open_edges & W:
+            cx = max(cx, r)
+        if open_edges & E:
+            cx = min(cx, CELL - 1 - r)
+        if open_edges & N:
+            cy = max(cy, r)
+        if open_edges & S:
+            cy = min(cy, CELL - 1 - r)
+        pulled.append((cx, cy, r))
+    return tuple(pulled)
+
+
+def woods(open_edges: int = 0) -> Image.Image:
     """A filled canopy: crowns drawn back to front, each keeping its lit
     top-left rim, over grass that shows only in the clearings and at the
     fringe. The value drop against plains is the tile's read — cover, not
-    decoration — and trunks at the fringe say the cover is trees."""
-    t = _ground(GRASS, 3)
+    decoration — and trunks at the fringe say the cover is trees.
+
+    `open_edges` names the borders the wood ends at (see `_crowns_within`);
+    0 — every edge continued — is the atlas tile."""
+    t = _ground(GRASS, WOODS_SALT)
     px = t.load()
     covered = [[False] * CELL for _ in range(CELL)]
-    for cx, cy, r in sorted(_CROWNS, key=lambda c: c[1]):
+    for cx, cy, r in sorted(_crowns_within(open_edges), key=lambda c: c[1]):
         rim = (r - 2) * (r - 2)
         for yy in range(max(0, cy - r), min(CELL, cy + r + 1)):
             for xx in range(max(0, cx - r), min(CELL, cx + r + 1)):

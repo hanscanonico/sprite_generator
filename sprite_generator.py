@@ -144,7 +144,7 @@ def main() -> None:
                     args.out / "iso_buildings" / f"{bid}_{fac.team}.png",
                 )
 
-    print("building autotile sheets (roads, rivers, coast, shoals, bridges)")
+    print("building autotile sheets (roads, rivers, coast, shoals, woods, bridges)")
     from spritegen import autotile
 
     _write(
@@ -161,6 +161,10 @@ def main() -> None:
     _write(
         autotile.variant_sheet(autotile.shoal_tile),
         args.out / "autotiles" / "shoals.png",
+    )
+    _write(
+        autotile.variant_sheet(autotile.woods_tile),
+        args.out / "autotiles" / "woods.png",
     )
     _write(autotile.bridge_sheet(), args.out / "autotiles" / "bridges.png")
 

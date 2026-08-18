@@ -19,14 +19,18 @@ from PIL import Image
 from .palette import h01, lighten, mix
 from .terrain import (
     CELL,
+    E,
     GRASS_DARK,
+    N,
     ROAD,
     ROAD_DARK,
+    S,
     SAND,
     SAND_DARK,
     SNOW,
     TIMBER,
     TIMBER_DARK,
+    W,
     WATER,
     WATER_DARK,
     WATER_LIGHT,
@@ -35,9 +39,8 @@ from .terrain import (
     _rect,
     plains,
     sea,
+    woods,
 )
-
-N, E, S, W = 1, 2, 4, 8
 
 _RLO, _RHI = 22, 42  # road band bounds (20px wide)
 _WLO, _WHI = 20, 44  # river channel bounds (24px wide)
@@ -258,6 +261,13 @@ def shoal_tile(edges: int) -> Image.Image:
     for sx, sy in ((26, 26), (36, 20), (24, 38), (40, 32)):
         _rect(t, sx, sy, 3, 2, SAND_DARK)
     return t
+
+
+def woods_tile(mask: int) -> Image.Image:
+    """A wood whose canopy runs off each connected edge and scallops to a
+    tree line on the rest. Mask 15 — wood on all four sides — is the atlas
+    tile exactly, so only a wood's fringe leaves the base sheet."""
+    return woods(~mask & 15)
 
 
 def sheet(tiles: list[Image.Image], cols: int) -> Image.Image:

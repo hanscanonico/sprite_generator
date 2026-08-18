@@ -58,7 +58,7 @@ jobs:
 
           GEN = Path("/tmp/gen_a")
           ASSETS = Path(".lavish/assets")
-          EXPECTED = 36
+          EXPECTED = 37
           pairs = [
               (GEN / "units_atlas.png", ASSETS / "units_atlas.png"),
               (GEN / "units_atlas_b.png", ASSETS / "units_atlas_b.png"),
@@ -69,7 +69,7 @@ jobs:
           ]
           pairs += [
               (GEN / "autotiles" / f"{n}.png", ASSETS / "autotiles" / f"{n}.png")
-              for n in ("roads", "rivers", "coast", "shoals", "bridges")
+              for n in ("roads", "rivers", "coast", "shoals", "woods", "bridges")
           ]
           # Enumerated from the committed side so a snapshot the generator no
           # longer emits fails loudly instead of dropping out of the pair list.

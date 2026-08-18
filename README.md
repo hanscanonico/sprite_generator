@@ -95,17 +95,21 @@ python3 -m venv .venv
 | `iso_buildings/<id>_<team>.png` | 25 property-building cells for `assets/sprites/iso_buildings` |
 | `preview_units.png`, `preview_terrain.png` | 2x atlas contact sheets on checkerboard |
 | `preview_map.png` | an authored little battle map proving the sheet in context |
-| `autotiles/{roads,rivers,coast,shoals}.png` | 16-variant connection sheets (see below) |
+| `autotiles/{roads,rivers,coast,shoals,woods}.png` | 16-variant connection sheets (see below) |
 | `autotiles/bridges.png` | the two bridge deck orientations, E-W then N-S |
 
 The `autotiles/` sheets are the opt-in upgrade path beyond the fixed
 14-column terrain contract: roads and rivers as N/E/S/W connection sets (so
 they can turn and junction), both bridge orientations, coastline tiles for
-sea bordering land, and shoals surfed on whichever edges face water. Each
-connection sheet lays out masks 0-15 row-major (bit order N=1, E=2, S=4,
-W=8); `bridges.png` carries its two decks side by side. The demo
-map composes from these, which is why its roads connect and its island has a
-shoreline; the atlases themselves are unchanged drop-ins.
+sea bordering land, shoals surfed on whichever edges face water, and woods
+whose canopy runs off the edges the wood continues across and scallops to a
+tree line on the rest (so a stand of trees stops ending in a razor cut
+against the grass). Each connection sheet lays out masks 0-15 row-major (bit
+order N=1, E=2, S=4, W=8); `bridges.png` carries its two decks side by side.
+Mask 15 on the woods sheet is the atlas tile exactly, so only a wood's fringe
+leaves the base sheet. The demo map composes from these, which is why its
+roads connect and its island has a shoreline; the atlases themselves are
+unchanged drop-ins.
 
 Note the game's `make tiles` rebuilds its atlases from its own PixVoxel
 pipeline and would overwrite installed atlases; the per-cell exports exist so
@@ -144,10 +148,11 @@ that pipeline's paste step can be pointed at this art instead.
    authored under `terrain.TERRAIN_VALUE_CEILING` (and every building under
    `BUILDING_KEY_CEILING`) so the top of the ramp stays the units'.
 5. **`spritegen/autotile.py`** — the direction-aware road/river/bridge/
-   coast/shoal variants exported under `autotiles/`.
+   coast/shoal/woods variants exported under `autotiles/`.
 6. **`spritegen/atlas.py`** — assembles atlases, exports cells, renders the
    preview sheets and the demo map (which resolves roads, the river, the
-   bridge and every coastline through the autotile variants).
+   bridge, every coastline and every wood's tree line through the autotile
+   variants).
 
 Python 3.10+, no dependencies beyond Pillow. The old seed-driven generator
 (creatures/ships/items/robots/tanks) lives in git history before this

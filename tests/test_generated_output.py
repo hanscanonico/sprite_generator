@@ -33,6 +33,8 @@ from spritegen.palette import (
 from spritegen.terrain import (
     BUILDING_KEY_CEILING,
     CELL,
+    GRASS,
+    PLAINS_SALT,
     ROAD,
     ROAD_DARK,
     TERRAIN_MEDIAN_CEILING,
@@ -40,6 +42,7 @@ from spritegen.terrain import (
     TIMBER,
     WATER,
     WATER_DARK,
+    WOODS_SALT,
 )
 from spritegen.units import ATLAS_ORDER, build_model
 from spritegen.voxel import render_indexed
@@ -142,6 +145,7 @@ class Determinism(unittest.TestCase):
             autotile.river_tile,
             autotile.coast_tile,
             autotile.shoal_tile,
+            autotile.woods_tile,
         ):
             with self.subTest(builder=builder.__name__):
                 self.assertEqual(
@@ -366,6 +370,81 @@ class AutotileMasks(unittest.TestCase):
             x = i * (CELL + 2) + 2
             cut = sheet.crop((x, 2, x + CELL, 2 + CELL))
             self.assertEqual(cut.tobytes(), deck.convert("RGB").tobytes())
+
+
+class WoodsSeam(unittest.TestCase):
+    """A wood's ground is the plains ground, tone for tone.
+
+    The game shipped a woods sheet baked before the terrain value ceiling: its
+    plate still held the pre-ceiling grass while the atlas plains had come down
+    to GRASS, so every woods cell drew a bright rectangle at its own cell edge.
+    Both plates are that one GRASS tone under the same grain, so the step
+    cannot exist — measured against `_ground` rather than the plains tile
+    because the tile's wildflower is brighter than the ground band and would
+    let exactly the tone that caused the seam back through.
+    """
+
+    OLD_PLATE_GREEN = (119, 198, 79)  # what the game's committed sheet holds
+
+    def _plate(self, salt: int) -> set[tuple[int, int, int]]:
+        return set(opaque_pixels(terrain._ground(GRASS, salt)))
+
+    def _band(self, salt: int) -> tuple[float, float]:
+        lums = [terrain.luminance(c) for c in self._plate(salt)]
+        return min(lums), max(lums)
+
+    def test_the_woods_plate_is_the_plains_plate(self):
+        self.assertLessEqual(self._plate(WOODS_SALT), self._plate(PLAINS_SALT))
+        self.assertEqual(self._band(WOODS_SALT), self._band(PLAINS_SALT))
+
+    def test_no_woods_pixel_out_keys_the_plains_ground(self):
+        lo, hi = self._band(PLAINS_SALT)
+        # the bound is only worth asserting if it refuses the tone that caused
+        # the seam in the first place
+        self.assertGreater(terrain.luminance(self.OLD_PLATE_GREEN), hi)
+        ground = self._plate(PLAINS_SALT)
+        for mask in range(16):
+            with self.subTest(mask=mask):
+                for c in set(opaque_pixels(autotile.woods_tile(mask))):
+                    lum = terrain.luminance(c)
+                    self.assertLessEqual(lum, hi)
+                    # every tone is either a plains ground tone or shade over
+                    # one: canopy, trunk and contact shadow sit below the band
+                    if lum >= lo:
+                        self.assertIn(c, ground)
+
+    def _edge_ground(self, tile, bit: int) -> int:
+        """Ground pixels along one border — how far the tree line scallops
+        back from it."""
+        px = tile.convert("RGB").load()
+        ground = self._plate(PLAINS_SALT)
+        line = {
+            N: [(x, 0) for x in range(CELL)],
+            S: [(x, CELL - 1) for x in range(CELL)],
+            W: [(0, y) for y in range(CELL)],
+            E: [(CELL - 1, y) for y in range(CELL)],
+        }[bit]
+        return sum(1 for x, y in line if px[x, y] in ground)
+
+    def test_the_tree_line_scallops_off_every_open_edge(self):
+        walled_in = autotile.woods_tile(15)
+        for mask in range(16):
+            for bit in (N, E, S, W):
+                if mask & bit:  # the wood continues: canopy keeps its overhang
+                    continue
+                with self.subTest(mask=mask, edge=bit):
+                    self.assertGreater(
+                        self._edge_ground(autotile.woods_tile(mask), bit),
+                        self._edge_ground(walled_in, bit),
+                    )
+
+    def test_mask_fifteen_is_the_atlas_tile(self):
+        # the game's TerrainAutotiles keeps a wood walled in by wood on the
+        # base atlas, so the sheet's 15 has to be that same tile
+        self.assertEqual(
+            autotile.woods_tile(15).convert("RGB").tobytes(),
+            terrain.woods().convert("RGB").tobytes(),
+        )
 
 
 class RowSeparation(unittest.TestCase):
