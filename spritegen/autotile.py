@@ -9,7 +9,8 @@ edge. The demo map composes from these, and sprite_generator exports the
 variant sheets under out/autotiles/. Deterministic like everything else here.
 
 Connection masks are N|E|S|W bits naming which neighbours continue the
-feature (for coast: which edges touch land). Mask 0 falls back to E|W.
+feature (for coast: which edges touch land). A road's mask 0 falls back to
+E|W; a river's is a pond, since a watercourse joined to nothing is a pool.
 """
 
 from __future__ import annotations
@@ -44,6 +45,39 @@ from .terrain import (
 
 _RLO, _RHI = 22, 42  # road band bounds (20px wide)
 _WLO, _WHI = 20, 44  # river channel bounds (24px wide)
+_BLO, _BHI = 16, 48  # the bank the channel is cut into: 4px of shore a side
+
+# Bank tones, mixed from the ground and water constants the atlas already
+# authors under the terrain ceiling rather than written as fresh hexes — the
+# woods-seam rule: a bank that carried its own green would step against the
+# plains it borders the moment either moved. Silt where the grass gives out,
+# its shaded outer edge, and wet mud at the waterline.
+BANK = mix(SAND, GRASS_DARK, 0.2)
+BANK_DARK = mix(BANK, GRASS_DARK, 0.55)
+BANK_WET = mix(SAND_DARK, WATER_DARK, 0.25)
+
+# A run that stops has a rounded nose rather than a sawn-off bar: the water
+# ends on a semicircle centred in the joint square, the bank ringing it at the
+# same width it keeps along the channel.
+_HEAD_R = (_WHI - _WLO) / 2
+_BANK_R = _HEAD_R + (_WLO - _BLO)
+_POND_R = 14.0  # a standalone cell reads as a pool, so its water is wider
+
+
+def _closed_half(x: int, y: int, open_bit: int) -> bool:
+    """Whether a pixel is past the joint centre on the side a one-connection
+    run terminates — the half the nose is cut into."""
+    return {
+        N: y * 2 >= CELL,
+        S: y * 2 < CELL,
+        E: x * 2 < CELL,
+        W: x * 2 >= CELL,
+    }[open_bit]
+
+
+def _radius(x: int, y: int) -> float:
+    half = CELL / 2
+    return ((x + 0.5 - half) ** 2 + (y + 0.5 - half) ** 2) ** 0.5
 
 
 def _fill_arms(img: Image.Image, mask: int, lo: int, hi: int, c) -> None:
@@ -105,15 +139,60 @@ def road_tile(mask: int) -> Image.Image:
     return t
 
 
+def _shape_river(t: Image.Image, base: Image.Image, mask: int) -> None:
+    """Cut the channel and its banks into the plains plate `t`, `base` being
+    the untouched plate a rounded end gives ground back to."""
+    if mask == 0:
+        _disc(t, base, _POND_R)
+        return
+    _fill_arms(t, mask, _BLO, _BHI, BANK)
+    _fill_arms(t, mask, _WLO, _WHI, WATER)
+    if mask in (N, E, S, W):
+        _round_head(t, base, mask)
+
+
+def _disc(t: Image.Image, base: Image.Image, water_r: float) -> None:
+    """A banked pool: water inside `water_r`, a bank the channel's own width
+    around it, the plate itself beyond — a lone cell is a pond, not a bar."""
+    px, bp = t.load(), base.load()
+    for y in range(CELL):
+        for x in range(CELL):
+            d = _radius(x, y)
+            if d <= water_r:
+                px[x, y] = (*WATER, 255)
+            elif d <= water_r + (_WLO - _BLO):
+                px[x, y] = (*BANK, 255)
+            else:
+                px[x, y] = bp[x, y]
+
+
+def _round_head(t: Image.Image, base: Image.Image, open_bit: int) -> None:
+    """Taper the closed end of a one-connection run to a rounded nose."""
+    px, bp = t.load(), base.load()
+    for y in range(CELL):
+        for x in range(CELL):
+            if not _closed_half(x, y, open_bit):
+                continue
+            d = _radius(x, y)
+            if d <= _HEAD_R:
+                continue
+            px[x, y] = (*BANK, 255) if d <= _BANK_R else bp[x, y]
+
+
 def river_tile(mask: int, salt: int = 0) -> Image.Image:
     """A river channel to each connected edge, banked and streaked to match
     its flow direction. `salt` shifts the streak placement so a run of
     same-mask tiles doesn't chain its glints into a dashed line."""
+    base = plains()
+    t = base.copy()
+    _shape_river(t, base, mask)
+    shore = {BANK, WATER}
+    _edge_pass(t, lambda c: c in shore, BANK_DARK, GRASS_DARK)
+    _edge_pass(t, lambda c: c == WATER, WATER_DARK, BANK_WET)
     if mask == 0:
-        mask = E | W
-    t = plains()
-    _fill_arms(t, mask, _WLO, _WHI, WATER)
-    _edge_pass(t, lambda c: c == WATER, WATER_DARK, GRASS_DARK)
+        _rect(t, 25, 30, 7, 2, WATER_LIGHT)
+        _rect(t, 34, 36, 5, 1, mix(WATER, WATER_LIGHT, 0.5))
+        return t
     # flow streaks oriented along each arm, drifted per tile
     half = mix(WATER, WATER_LIGHT, 0.5)
     d1 = int(h01(salt, 1, 45) * 10) - 5

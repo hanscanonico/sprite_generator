@@ -42,6 +42,7 @@ from spritegen.terrain import (
     TIMBER,
     WATER,
     WATER_DARK,
+    WATER_LIGHT,
     WOODS_SALT,
 )
 from spritegen.units import ATLAS_ORDER, build_model
@@ -481,11 +482,13 @@ class AutotileMasks(unittest.TestCase):
                     self._edges_reaching(autotile.river_tile(mask), WATER_TONES), mask
                 )
 
-    def test_mask_zero_falls_back_to_east_west(self):
+    def test_a_roads_mask_zero_falls_back_to_east_west(self):
         self.assertEqual(self._edges_reaching(autotile.road_tile(0), ROAD_TONES), E | W)
-        self.assertEqual(
-            self._edges_reaching(autotile.river_tile(0), WATER_TONES), E | W
-        )
+
+    def test_a_rivers_mask_zero_is_a_pond_rather_than_a_bar(self):
+        # a watercourse joined to nothing is a pool, so it reaches no edge —
+        # against the E|W bar the same mask used to draw
+        self.assertEqual(self._edges_reaching(autotile.river_tile(0), WATER_TONES), 0)
 
     def test_sheets_lay_all_sixteen_masks_out_row_major(self):
         sheet = autotile.variant_sheet(autotile.road_tile)
@@ -604,6 +607,123 @@ class WoodsSeam(unittest.TestCase):
             autotile.woods_tile(15).convert("RGB").tobytes(),
             terrain.woods().convert("RGB").tobytes(),
         )
+
+
+class RiverBanks(unittest.TestCase):
+    """A river has a shore, the way the coast family already does.
+
+    The round-5 review read the water on `first_steps` as "a hard-edged
+    rectangle with a pale outline, no shore blend": `river_tile` filled a blue
+    bar straight onto the grass, ended a run with a sawn-off square, and drew
+    mask 0 as an E|W bar rather than as the pool a cell joined to nothing is.
+    These pin the three fixes, each against a control that would have passed
+    before them.
+    """
+
+    OLD_PLATE_GREEN = WoodsSeam.OLD_PLATE_GREEN
+    BANK_TONES = (autotile.BANK, autotile.BANK_DARK, autotile.BANK_WET)
+    # Every tone a river's water can be: the channel, its rim, the glints.
+    WATER_FAMILY = frozenset(
+        {WATER, WATER_DARK, WATER_LIGHT, palette.mix(WATER, WATER_LIGHT, 0.5)}
+    )
+
+    def _ground(self) -> set[tuple[int, int, int]]:
+        return set(opaque_pixels(terrain._ground(GRASS, PLAINS_SALT)))
+
+    def _hard_edged(self, mask: int):
+        """The tile as it was drawn before this pass: water straight onto the
+        plate, no bank between them."""
+        t = terrain.plains()
+        autotile._fill_arms(t, mask, autotile._WLO, autotile._WHI, WATER)
+        return t
+
+    def _grass_touching_water(self, tile) -> int:
+        px = tile.convert("RGB").load()
+        ground = self._ground()
+        return sum(
+            1
+            for y in range(1, CELL - 1)
+            for x in range(1, CELL - 1)
+            if px[x, y] in ground
+            and any(
+                px[nx, ny] in self.WATER_FAMILY
+                for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1))
+            )
+        )
+
+    def _water_in_row(self, tile, y: int) -> int:
+        px = tile.convert("RGB").load()
+        return sum(1 for x in range(CELL) if px[x, y] in self.WATER_FAMILY)
+
+    def test_the_bank_is_mixed_from_the_ground_constants(self):
+        """Shared derivation, never a copied hex — the woods-seam rule: a bank
+        carrying its own tan would step against the shore tones the moment
+        either moved."""
+        parents = {
+            autotile.BANK: (terrain.SAND, terrain.GRASS_DARK),
+            autotile.BANK_DARK: (autotile.BANK, terrain.GRASS_DARK),
+            autotile.BANK_WET: (terrain.SAND_DARK, WATER_DARK),
+        }
+        for tone, (a, b) in parents.items():
+            with self.subTest(tone=tone):
+                self.assertNotIn(tone, (a, b))
+                for ch, pair in zip(tone, zip(a, b)):
+                    self.assertGreaterEqual(ch, min(pair))
+                    self.assertLessEqual(ch, max(pair))
+
+    def test_no_bank_tone_out_keys_the_plains_ground(self):
+        hi = max(terrain.luminance(c) for c in self._ground())
+        # worth asserting only if it refuses the pre-ceiling green that caused
+        # the woods seam — the same control, since this is the same rule
+        self.assertGreater(terrain.luminance(self.OLD_PLATE_GREEN), hi)
+        for tone in self.BANK_TONES:
+            with self.subTest(tone=tone):
+                self.assertLessEqual(terrain.luminance(tone), hi)
+
+    def test_no_river_pixel_reaches_the_unit_band(self):
+        for mask in range(16):
+            with self.subTest(mask=mask):
+                for c in set(opaque_pixels(autotile.river_tile(mask))):
+                    self.assertLessEqual(terrain.luminance(c), TERRAIN_VALUE_CEILING)
+
+    def test_every_bank_edge_carries_a_lip(self):
+        self.assertGreater(self._grass_touching_water(self._hard_edged(E | W)), 0)
+        for mask in range(16):
+            with self.subTest(mask=mask):
+                self.assertEqual(
+                    self._grass_touching_water(autotile.river_tile(mask)), 0
+                )
+
+    def test_a_run_that_terminates_tapers_to_a_nose(self):
+        # a row 11px past the joint centre: through-flow keeps the full
+        # channel there, a terminating run has rounded most of it away
+        far = CELL // 2 + 11
+        self.assertEqual(
+            self._water_in_row(autotile.river_tile(N | S), far),
+            autotile._WHI - autotile._WLO,
+        )
+        narrowed = self._water_in_row(autotile.river_tile(N), far)
+        self.assertGreater(narrowed, 0)
+        self.assertLess(narrowed, autotile._WHI - autotile._WLO)
+
+    def test_mask_zero_is_a_pond_ringed_on_every_side(self):
+        px = autotile.river_tile(0).convert("RGB").load()
+        mid = CELL // 2
+        self.assertIn(px[mid, mid], self.WATER_FAMILY)
+        bank = set(self.BANK_TONES)
+        ground = self._ground()
+        for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
+            with self.subTest(direction=(dx, dy)):
+                walk = [
+                    px[mid + dx * k, mid + dy * k]
+                    for k in range(1, mid)
+                    if 0 <= mid + dx * k < CELL and 0 <= mid + dy * k < CELL
+                ]
+                water = max(i for i, c in enumerate(walk) if c in self.WATER_FAMILY)
+                ringed = [i for i, c in enumerate(walk) if c in bank]
+                self.assertTrue(ringed)
+                self.assertGreater(min(ringed), water)
+                self.assertIn(walk[-1], ground)
 
 
 class RowSeparation(unittest.TestCase):

@@ -114,7 +114,11 @@ tree line on the rest (so a stand of trees stops ending in a razor cut
 against the grass). Each connection sheet lays out masks 0-15 row-major (bit
 order N=1, E=2, S=4, W=8); `bridges.png` carries its two decks side by side.
 Mask 15 on the woods sheet is the atlas tile exactly, so only a wood's fringe
-leaves the base sheet. The demo map composes from these, which is why its
+leaves the base sheet. A river is cut into a bank rather than laid on the
+grass — silt, its shaded outer edge and a wet lip at the waterline, all mixed
+from the same ground constants the plains and shoal tones come from — a run
+that stops ends on a rounded nose, and a river's mask 0 is a banked pond,
+since a watercourse joined to nothing is a pool rather than an E-W bar. The demo map composes from these, which is why its
 roads connect and its island has a shoreline; the atlases themselves are
 unchanged drop-ins.
 
