@@ -66,6 +66,15 @@ CANOPY = (36, 96, 44)
 CANOPY_DK = (24, 70, 33)
 CANOPY_LT = (82, 152, 74)
 TRUNK = (109, 76, 65)
+# The canopy's lit top plane (design review round 6). A crown drawn as one
+# body tone with a rim is a green disc, and a dark or green unit standing on it
+# had nothing to separate against — a verdant bomber on woods measured 0.00-0.72
+# ramp steps. The top of each crown catches the light the whole sheet is lit
+# from, which is a value step inside the tile rather than a brighter tile: both
+# tones are mixed toward the plains ground and stop under its band, so the
+# woods plate still cannot out-key the plains it borders.
+CANOPY_TOP = mix(CANOPY_LT, GRASS, 0.45)
+CANOPY_MID = mix(CANOPY_TOP, CANOPY, 0.5)
 
 # Grain salts for the two GRASS grounds. They differ so a wood's clearings do
 # not repeat the field's tufts; the tone they perturb is the one GRASS above,
@@ -211,6 +220,13 @@ def _crowns_within(open_edges: int) -> tuple[tuple[int, int, int], ...]:
     return tuple(pulled)
 
 
+def _crown_light(x: int, y: int, dx: float, dy: float, r: int) -> float:
+    """How lit a point inside a crown of radius `r` is, on the same up-left
+    axis the crown's rim is lit along. The hash term breaks the two tone
+    boundaries into leaves — a clean arc reads as a painted stripe."""
+    return -(dx * 0.5 + dy) / r + (h01(x, y, 35) - 0.5) * 0.22
+
+
 def woods(open_edges: int = 0) -> Image.Image:
     """A filled canopy: crowns drawn back to front, each keeping its lit
     top-left rim, over grass that shows only in the clearings and at the
@@ -230,10 +246,15 @@ def woods(open_edges: int = 0) -> Image.Image:
                 d = dx * dx + dy * dy
                 if d > r * r:
                     continue
+                light = _crown_light(xx, yy, dx, dy, r)
                 if d > rim:  # crown edge: lit toward the light, shaded away
                     c = CANOPY_LT if dx + dy * 1.5 < 0 else CANOPY_DK
                 elif h01(xx, yy, 34) < 0.14:
                     c = CANOPY_DK  # leaf clumps
+                elif light > 0.55:
+                    c = CANOPY_TOP  # the crown's sunlit top plane
+                elif light > 0.22:
+                    c = CANOPY_MID  # and its shoulder, so the step is a roll
                 else:
                     n = (h01(xx, yy, 33) - 0.5) * 0.12
                     c = _lit(CANOPY, n) if n > 0 else darken(CANOPY, -n)
@@ -345,9 +366,20 @@ def river() -> Image.Image:
     return t
 
 
-def sea() -> Image.Image:
-    t = _water_base(True, 6)
-    _glints(t, WATER_DARK, WATER, 73)
+# Phase offsets for the sea (design review rounds 3 and 6). One sea tile
+# repeated over a whole frame is visibly row-aligned however the glints are
+# spread inside it, because every cell spreads them the same way — the lattice
+# is the repeat, not the tile. Each entry is (grain salt, glint salt): a
+# variant is the same water with its texture and its flow in a different phase.
+# Variant 0 is the atlas column, so it stays exactly what it was and the game
+# can adopt the rest one at a time.
+SEA_PHASES: tuple[tuple[int, int], ...] = ((6, 73), (14, 91), (23, 108))
+
+
+def sea(phase: int = 0) -> Image.Image:
+    grain, glint = SEA_PHASES[phase]
+    t = _water_base(True, grain)
+    _glints(t, WATER_DARK, WATER, glint)
     return t
 
 

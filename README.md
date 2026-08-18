@@ -120,6 +120,7 @@ python3 -m venv .venv
 | `preview_map.png` | an authored little battle map proving the sheet in context |
 | `autotiles/{roads,rivers,coast,shoals,woods}.png` | 16-variant connection sheets (see below) |
 | `autotiles/bridges.png` | the two bridge deck orientations, E-W then N-S |
+| `autotiles/sea.png` | the three sea phase variants, phase 0 first (see below) |
 
 The `autotiles/` sheets are the opt-in upgrade path beyond the fixed
 14-column terrain contract: roads and rivers as N/E/S/W connection sets (so
@@ -134,10 +135,24 @@ leaves the base sheet. A river is cut into a bank rather than laid on the
 grass — silt, its shaded outer edge and a wet lip at the waterline, all mixed
 from the same ground constants the plains and shoal tones come from — a run
 that stops ends on a rounded nose, and a river's mask 0 is a banked pond,
-since a watercourse joined to nothing is a pool rather than an E-W bar. The
+since a watercourse joined to nothing is a pool rather than an E-W bar — a
+pool whose bank is widest and darkest down the shadow diagonal and thins to a
+one-pixel lip in the notches its reeds stand in, because a ring of one weight
+and one tone is a badge rather than a shore. The
 demo map composes from these, which is why its roads connect and its island
 has a shoreline; the atlases themselves are
 unchanged drop-ins.
+
+`autotiles/sea.png` is the one sheet that is not a connection set: it is the
+same open water in three **phases**, laid out left to right with a 2px gutter
+like every other sheet. A field of sea reads visibly row-aligned however the
+glints are spread inside one tile, because what lines up is the repeat — so
+the fix is more than one tile and a rule for choosing between them. **The
+generator emits the phases; the game places them**, by hashing the cell
+coordinate into `0..2`. **Phase 0 is the terrain atlas's sea column byte for
+byte**, so a board that knows nothing about this sheet is unchanged and a
+board that adopts it keeps every cell it does not re-key; nothing has to move
+on the day the game registers the sheet.
 
 Note the game's `make tiles` rebuilds its atlases from its own PixVoxel
 pipeline and would overwrite installed atlases; the per-cell exports exist so
@@ -173,10 +188,18 @@ that pipeline's paste step can be pointed at this art instead.
 4. **`spritegen/buildings.py` / `spritegen/terrain.py`** — voxel property
    buildings and nature props composed onto 64px tile grounds. The grounds
    keep `tools/generate_tiles.gd`'s hues but not its values: every tone is
-   authored under `terrain.TERRAIN_VALUE_CEILING` (and every building under
-   `BUILDING_KEY_CEILING`) so the top of the ramp stays the units'.
+   authored under `terrain.TERRAIN_VALUE_CEILING` so the top of the ramp
+   stays the units'. A building's masonry is picked by its **lit** plane
+   rather than by its own value — a voxel top face is the material scaled
+   1.3x and rim-lit on top of that — so the greys are dark enough that no
+   wall reaches the units' band; a lit window and a pane of glazing are the
+   only things that glint into it (`BUILDING_KEY_CEILING`). The woods canopy
+   carries a lit top plane so a dark or green unit standing on it has a value
+   step to separate against, and that plane still stops under the plains
+   ground's own band, which is what keeps the woods/plains seam rule true.
 5. **`spritegen/autotile.py`** — the direction-aware road/river/bridge/
-   coast/shoal/woods variants exported under `autotiles/`.
+   coast/shoal/woods variants and the sea's phase variants, exported under
+   `autotiles/`.
 6. **`spritegen/atlas.py`** — assembles atlases, exports cells, renders the
    preview sheets and the demo map (which resolves roads, the river, the
    bridge, every coastline and every wood's tree line through the autotile

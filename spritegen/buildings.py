@@ -14,18 +14,25 @@ from __future__ import annotations
 from .palette import Faction, h01
 from .voxel import Model
 
-# The masonry these models are built from (fix spec round 4, item 7). A voxel
-# top face is the material scaled 1.3x, so the pale palette greys — concrete,
-# stone, steel — lit tops at L206-238 and property buildings out-keyed the
-# armies standing next to them by ~90L. Scenery is built from the darker
-# member of each pair instead, which keeps every lit plane under
-# terrain.BUILDING_KEY_CEILING; the pale materials survive only as accents
-# small enough to read as a glint.
-WALL = "concrete_dk"
-WALL_DK = "stone_dk"
-MASONRY = "stone_dk"
-MASONRY_DK = "rock_dk"
-METAL = "gunmetal"
+# The masonry these models are built from (fix spec rounds 4 and 6, item 7).
+# A voxel top face is the material scaled 1.3x and a front-corner top is rim-lit
+# on top of that, so a material's lit plane lands ~55L above its own value: the
+# pale palette greys (concrete, stone, steel) topped out at L206-238, and even
+# round 4's "darker member of each pair" left concrete_dk topping at L187 and
+# stone_dk at L176 — 13.1% of the port's pixels, 7.2% of the HQ's and 6.0% of
+# the city's inside the L175+ band terrain.TERRAIN_VALUE_CEILING reserves for
+# units. Round 6 picks the greys by their LIT plane instead of by their own
+# value: every material below tops out under that line, and the ladder is kept
+# three steps deep — warm wall, cool shade, dark trim — so the buildings are
+# keyed down rather than flattened. A lit window and a pane of glazing are the
+# only things left in the band (terrain.BUILDING_KEY_CEILING). Castle stone and
+# city concrete land on the same two greys, which is what the palette has under
+# the line; what tells a city from a fort is its mass, as it always was.
+WALL = "rock_dk"  # lit top L164
+WALL_DK = "track_lt"  # L153
+MASONRY = "rock_dk"
+MASONRY_DK = "track_lt"
+METAL = "gunmetal"  # L169
 
 # ---------------------------------------------------------------------------
 # nature props
@@ -244,20 +251,24 @@ BUILDINGS = {
 }
 
 # The neutral row strips hue: an unowned property must not read as lit or
-# owned, so every hue-carrying material resolves to a grey of matching value
-# (design review 2026-08-13). Owned rows keep the accents untouched. `bore`
-# stays — the palette has no dark true grey and its few pixels read black.
+# owned, so every hue-carrying material resolves to a grey (design review
+# 2026-08-13). The greys are the masonry ladder above rather than the pale
+# `rock`/`stone_dk` pair, for the reason the ladder itself moved: `rock` lit a
+# top plane at L200 and `stone_dk` at L176, which put the row nobody owns the
+# furthest into the units' band. Owned rows keep their accents untouched, so
+# the lit-window glint is an owned property's alone. `bore` stays — the palette
+# has no dark true grey and its few pixels read black.
 _NEUTRAL_GREYS = {
-    "amber": "rock",  # lit windows, hazard stripe, windsock, container marker
-    "glass_dk": "rock_dk",  # window and cab glazing
-    "wood": "stone_dk",  # doors, crates
-    "leaf": "rock",  # plaza planter
-    "leaf_dk": "rock_dk",
-    "body": "stone_dk",  # roofs: the slate theme's cast still reads owned
-    "body_dk": "rock_dk",
-    "body_lt": "rock",
-    "gunmetal": "rock",  # machinery: cool cast shows on shadow faces
-    "gunmetal_dk": "rock_dk",
+    "amber": "rock_dk",  # lit windows, hazard stripe, windsock, container marker
+    "glass_dk": "track_lt",  # window and cab glazing
+    "wood": "gunmetal_dk",  # doors, crates
+    "leaf": "rock_dk",  # plaza planter
+    "leaf_dk": "track_lt",
+    "body": "rock_dk",  # roofs: the slate theme's cast still reads owned
+    "body_dk": "track_lt",
+    "body_lt": "rock_dk",
+    "gunmetal": "rock_dk",  # machinery: cool cast shows on shadow faces
+    "gunmetal_dk": "track_lt",
 }
 
 

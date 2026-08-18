@@ -231,6 +231,13 @@ class ValueCeiling(unittest.TestCase):
     # ceiling, so a building glinting at a third of that cannot out-key one.
     BUILDING_GLINT_SHARE = 0.01
     TERRAIN_HIGHLIGHT_SHARE = 0.05
+    # Round 6 measured the band the other buildings' pixels sit in rather than
+    # their median: the port put 13.1% of its pixels above the terrain ceiling,
+    # the HQ 7.2% and the city 6.0%, against 0% for every non-property tile.
+    # What may stay there is a lit window and a pane of glazing, which is what
+    # this budget is the size of — the masonry itself is held to none of it,
+    # one test below, where the unowned row has neither.
+    PROPERTY_GLAZING_SHARE = 0.02
 
     def _tiles(self):
         for tid in terrain.TERRAIN_ORDER:
@@ -256,6 +263,23 @@ class ValueCeiling(unittest.TestCase):
             with self.subTest(tile=tid, faction=fac.key):
                 share = share_above(px, TERRAIN_VALUE_CEILING)
                 self.assertLessEqual(share, self.TERRAIN_HIGHLIGHT_SHARE)
+
+    def test_property_masonry_stays_out_of_the_units_band(self):
+        # The unowned row carries no lit window and no glazing — every
+        # hue-carrying material is swapped for masonry grey — so its share of
+        # the band is the buildings' own construction, and it is none.
+        for bid in sorted(terrain.PROPERTY):
+            with self.subTest(building=bid):
+                px = opaque_pixels(atlas.building_cell(bid, FACTIONS[0]))
+                self.assertEqual(share_above(px, TERRAIN_VALUE_CEILING), 0.0)
+
+    def test_a_property_only_glazes_into_the_terrain_band(self):
+        for bid in sorted(terrain.PROPERTY):
+            for fac in FACTIONS:
+                with self.subTest(building=bid, faction=fac.key):
+                    px = opaque_pixels(atlas.building_cell(bid, fac))
+                    share = share_above(px, TERRAIN_VALUE_CEILING)
+                    self.assertLessEqual(share, self.PROPERTY_GLAZING_SHARE)
 
     def test_property_buildings_only_glint_above_the_key_ceiling(self):
         for bid in sorted(terrain.PROPERTY):
@@ -751,7 +775,13 @@ class RiverBanks(unittest.TestCase):
     """
 
     OLD_PLATE_GREEN = WoodsSeam.OLD_PLATE_GREEN
-    BANK_TONES = (autotile.BANK, autotile.BANK_DARK, autotile.BANK_WET)
+    BANK_TONES = (
+        autotile.BANK,
+        autotile.BANK_DARK,
+        autotile.BANK_WET,
+        autotile.POND_BANK,
+        autotile.POND_BANK_DK,
+    )
     # Every tone a river's water can be: the channel, its rim, the glints.
     WATER_FAMILY = frozenset(
         {WATER, WATER_DARK, WATER_LIGHT, palette.mix(WATER, WATER_LIGHT, 0.5)}
@@ -798,6 +828,8 @@ class RiverBanks(unittest.TestCase):
             autotile.BANK: (terrain.SAND, terrain.GRASS_DARK),
             autotile.BANK_DARK: (autotile.BANK, terrain.GRASS_DARK),
             autotile.BANK_WET: (terrain.SAND_DARK, WATER_DARK),
+            autotile.POND_BANK: (autotile.BANK, terrain.GRASS_DARK),
+            autotile.POND_BANK_DK: (autotile.POND_BANK, autotile.BANK_WET),
         }
         for tone, (a, b) in parents.items():
             with self.subTest(tone=tone):
@@ -865,6 +897,134 @@ class RiverBanks(unittest.TestCase):
                 self.assertTrue(ringed)
                 self.assertGreater(min(ringed), water)
                 self.assertIn(walk[-1], ground)
+
+    def _ring_depth(self, px, dx: float, dy: float) -> int:
+        """Bank pixels a ray out of the pond's centre crosses."""
+        bank = set(self.BANK_TONES)
+        length = (dx * dx + dy * dy) ** 0.5
+        seen, depth, k = set(), 0, 0.0
+        while k < CELL / 2:
+            x, y = round(31.5 + dx / length * k), round(31.5 + dy / length * k)
+            if 0 <= x < CELL and 0 <= y < CELL and (x, y) not in seen:
+                seen.add((x, y))
+                depth += px[x, y] in bank
+            k += 0.25
+        return depth
+
+    def test_the_ponds_ring_is_darker_than_the_channels_own_bank(self):
+        """Round 6 read the pond as a badge: a rounded capsule with a cream
+        outline. The ring keeps the channel's derivation and drops ~20L, which
+        is what stops it reading as an outline drawn around a shape."""
+        drop = terrain.luminance(autotile.BANK) - terrain.luminance(autotile.POND_BANK)
+        self.assertGreater(drop, 15.0)
+        self.assertLess(
+            terrain.luminance(autotile.POND_BANK_DK),
+            terrain.luminance(autotile.POND_BANK),
+        )
+
+    def test_the_ponds_ring_is_not_one_weight_all_the_way_round(self):
+        """The other half of the badge read. The bank is widest down the
+        shadow diagonal and thins to its lip in the reed notches; that it
+        never thins past one is `test_every_bank_edge_carries_a_lip`'s."""
+        px = autotile.river_tile(0).convert("RGB").load()
+        shadow = self._ring_depth(px, 1, 1)
+        lit = self._ring_depth(px, -1, -1)
+        self.assertGreaterEqual(shadow, lit + 3)
+        for direction in autotile._REEDS:
+            with self.subTest(reed=direction):
+                self.assertLessEqual(self._ring_depth(px, *direction), 2)
+
+
+class SeaPhases(unittest.TestCase):
+    """One sea tile repeated is a lattice, however its glints are spread.
+
+    Rounds 3 and 6: a field of sea reads visibly row-aligned across a whole
+    frame, because the repeat is what lines up rather than anything inside the
+    tile. The generator emits phase variants; placing them is the game's, by
+    coordinate hash. Phase 0 stays the atlas column exactly, so a board that
+    has not adopted the sheet is unchanged and adoption is additive.
+    """
+
+    def _phases(self):
+        return [terrain.sea(phase) for phase in range(len(terrain.SEA_PHASES))]
+
+    def test_phase_zero_is_the_atlas_sea_column(self):
+        col = terrain.TERRAIN_ORDER.index("sea")
+        column = atlas.build_terrain_atlas().crop(
+            (col * CELL, 0, col * CELL + CELL, CELL)
+        )
+        self.assertEqual(
+            column.convert("RGB").tobytes(), terrain.sea(0).convert("RGB").tobytes()
+        )
+
+    def test_every_phase_moves_the_water(self):
+        frames = [tile.convert("RGB").tobytes() for tile in self._phases()]
+        self.assertGreaterEqual(len(frames), 2)
+        self.assertEqual(len(set(frames)), len(frames))
+
+    def test_no_phase_leaves_the_terrain_band_or_the_colour_ceiling(self):
+        for phase, tile in enumerate(self._phases()):
+            with self.subTest(phase=phase):
+                px = opaque_pixels(tile)
+                self.assertLessEqual(
+                    share_above(px, TERRAIN_VALUE_CEILING),
+                    ValueCeiling.TERRAIN_HIGHLIGHT_SHARE,
+                )
+                self.assertLessEqual(len(set(px)), TerrainPalette.NATURE_CEILING)
+
+    def test_the_sheet_lays_the_phases_out_in_order(self):
+        sheet = autotile.sea_sheet()
+        phases = self._phases()
+        self.assertEqual(sheet.size, (len(phases) * (CELL + 2) + 2, CELL + 4))
+        for i, tile in enumerate(phases):
+            with self.subTest(phase=i):
+                x = i * (CELL + 2) + 2
+                cut = sheet.crop((x, 2, x + CELL, 2 + CELL))
+                self.assertEqual(cut.tobytes(), tile.convert("RGB").tobytes())
+
+
+class CanopyLight(unittest.TestCase):
+    """The woods canopy has a lit top plane, so what stands on it separates.
+
+    Round 6: verdant-on-woods is green-on-green — a verdant bomber measured
+    0.00-0.72 ramp steps against the tile behind it, because a crown was one
+    body tone with a rim and a dark green unit had nothing to cross. The plane
+    is a value step INSIDE the tile: it may not raise the tile's key, which is
+    `WoodsSeam` and `ValueCeiling`'s to refuse, and both still pass.
+    """
+
+    MIN_STEP = 40.0  # a lit plane a player can see, in luma
+    MIN_SHARE = 0.05  # and enough of the canopy to be a plane rather than a fleck
+
+    def test_the_lit_plane_is_a_real_value_step_over_the_canopy(self):
+        step = terrain.luminance(terrain.CANOPY_TOP) - terrain.luminance(terrain.CANOPY)
+        self.assertGreater(step, self.MIN_STEP)
+        self.assertGreater(
+            terrain.luminance(terrain.CANOPY_TOP),
+            terrain.luminance(terrain.CANOPY_MID),
+        )
+        self.assertGreater(
+            terrain.luminance(terrain.CANOPY_MID), terrain.luminance(terrain.CANOPY)
+        )
+
+    def test_the_lit_plane_still_sits_under_the_plains_ground(self):
+        # the seam rule from the other side: the plate is the plains plate, so
+        # the brightest thing the canopy may hold is darker than the dimmest
+        # thing the ground does
+        plate = [
+            terrain.luminance(c)
+            for c in set(opaque_pixels(terrain._ground(GRASS, PLAINS_SALT)))
+        ]
+        self.assertLess(terrain.luminance(terrain.CANOPY_TOP), min(plate))
+
+    def test_every_woods_variant_wears_the_plane(self):
+        for mask in range(16):
+            with self.subTest(mask=mask):
+                px = opaque_pixels(autotile.woods_tile(mask))
+                lit = sum(
+                    1 for c in px if c in (terrain.CANOPY_TOP, terrain.CANOPY_MID)
+                )
+                self.assertGreater(lit / len(px), self.MIN_SHARE)
 
 
 class RowSeparation(unittest.TestCase):

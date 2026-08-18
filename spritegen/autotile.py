@@ -28,6 +28,7 @@ from .terrain import (
     S,
     SAND,
     SAND_DARK,
+    SEA_PHASES,
     SNOW,
     TIMBER,
     TIMBER_DARK,
@@ -62,6 +63,24 @@ BANK_WET = mix(SAND_DARK, WATER_DARK, 0.25)
 _HEAD_R = (_WHI - _WLO) / 2
 _BANK_R = _HEAD_R + (_WLO - _BLO)
 _POND_R = 14.0  # a standalone cell reads as a pool, so its water is wider
+
+# The pond's own bank (design review round 6). One width and one tone around a
+# circle of water is a button: the round-5 pond read as a badge with a cream
+# outline. Everything about this ring varies except its minimum — water may
+# never meet grass, which is the lip rule the channel tiles are held to — so it
+# is widest and darkest on the lower-right, the shadow side away from the light
+# every tile is lit from, and thins to that lip in the notches the reeds stand
+# in. Its tone is ~20L under the channel's own BANK, mixed from the same ground
+# constants: a bank that carried its own hex would step against the shore the
+# moment either moved.
+POND_BANK = mix(BANK, GRASS_DARK, 0.65)
+POND_BANK_DK = mix(POND_BANK, BANK_WET, 0.55)
+_POND_LIP = 1
+_POND_BANK_MIN, _POND_BANK_MAX = 2.0, 7.0
+_POND_SHADE_DIR = (0.5**0.5, 0.5**0.5)  # down-right, away from the light
+# Screen directions the reeds stand in, and how wide a clump notches the ring.
+_REEDS = ((-0.94, -0.34), (0.20, -0.98), (-0.55, 0.84))
+_REED_NOTCH = 0.93
 
 
 def _closed_half(x: int, y: int, open_bit: int) -> bool:
@@ -143,7 +162,7 @@ def _shape_river(t: Image.Image, base: Image.Image, mask: int) -> None:
     """Cut the channel and its banks into the plains plate `t`, `base` being
     the untouched plate a rounded end gives ground back to."""
     if mask == 0:
-        _disc(t, base, _POND_R)
+        _pond(t, base)
         return
     _fill_arms(t, mask, _BLO, _BHI, BANK)
     _fill_arms(t, mask, _WLO, _WHI, WATER)
@@ -151,19 +170,53 @@ def _shape_river(t: Image.Image, base: Image.Image, mask: int) -> None:
         _round_head(t, base, mask)
 
 
-def _disc(t: Image.Image, base: Image.Image, water_r: float) -> None:
-    """A banked pool: water inside `water_r`, a bank the channel's own width
-    around it, the plate itself beyond — a lone cell is a pond, not a bar."""
+def _bank_width(ux: float, uy: float) -> float:
+    """How far the pond's bank reaches out along the unit direction (ux, uy):
+    widest down the shadow diagonal, cut back to the lip in a reed notch."""
+    for rx, ry in _REEDS:
+        if ux * rx + uy * ry > _REED_NOTCH:
+            return _POND_LIP
+    shade = ux * _POND_SHADE_DIR[0] + uy * _POND_SHADE_DIR[1]
+    return _POND_BANK_MIN + (_POND_BANK_MAX - _POND_BANK_MIN) * (0.5 + 0.5 * shade)
+
+
+def _reeds(t: Image.Image) -> None:
+    """Blades standing in the notches, over the plate rather than over the
+    bank: the interruption is what stops the ring reading as a stamped
+    outline, and the lip guard is what keeps it a bank all the way round."""
+    px = t.load()
+    half = CELL / 2
+    for rx, ry in _REEDS:
+        bx = round(half + rx * (_POND_R + _POND_LIP + 2))
+        by = round(half + ry * (_POND_R + _POND_LIP + 2))
+        for dx, height in ((-2, 2), (0, 4), (2, 3)):
+            for y in range(by - height + 1, by + 1):
+                x = bx + dx
+                if not (0 <= x < CELL and 0 <= y < CELL):
+                    continue
+                if _radius(x, y) > _POND_R + _POND_LIP:
+                    px[x, y] = (*GRASS_DARK, 255)
+
+
+def _pond(t: Image.Image, base: Image.Image) -> None:
+    """A banked pool: water inside `_POND_R`, a bank of varying weight around
+    it, the plate itself beyond — a lone cell is a pond, not a bar."""
     px, bp = t.load(), base.load()
+    half = CELL / 2
     for y in range(CELL):
         for x in range(CELL):
-            d = _radius(x, y)
-            if d <= water_r:
+            dx, dy = x + 0.5 - half, y + 0.5 - half
+            d = (dx * dx + dy * dy) ** 0.5
+            if d <= _POND_R:
                 px[x, y] = (*WATER, 255)
-            elif d <= water_r + (_WLO - _BLO):
-                px[x, y] = (*BANK, 255)
-            else:
+                continue
+            ux, uy = dx / d, dy / d
+            if d > _POND_R + _bank_width(ux, uy):
                 px[x, y] = bp[x, y]
+                continue
+            shade = ux * _POND_SHADE_DIR[0] + uy * _POND_SHADE_DIR[1]
+            px[x, y] = (*(POND_BANK_DK if shade > 0.25 else POND_BANK), 255)
+    _reeds(t)
 
 
 def _round_head(t: Image.Image, base: Image.Image, open_bit: int) -> None:
@@ -186,7 +239,7 @@ def river_tile(mask: int, salt: int = 0) -> Image.Image:
     base = plains()
     t = base.copy()
     _shape_river(t, base, mask)
-    shore = {BANK, WATER}
+    shore = {BANK, POND_BANK, POND_BANK_DK, WATER}
     _edge_pass(t, lambda c: c in shore, BANK_DARK, GRASS_DARK)
     _edge_pass(t, lambda c: c == WATER, WATER_DARK, BANK_WET)
     if mask == 0:
@@ -368,3 +421,13 @@ def variant_sheet(builder, cols: int = 4) -> Image.Image:
 def bridge_sheet() -> Image.Image:
     """Both deck orientations: E-W over a north-south river, then N-S."""
     return sheet([bridge_tile(True), bridge_tile(False)], 2)
+
+
+def sea_sheet() -> Image.Image:
+    """The sea's phase variants, left to right, phase 0 first.
+
+    Phase 0 is the atlas sea column byte for byte, so a board that knows
+    nothing about this sheet is unchanged and one that adopts it picks a
+    column per cell (the game hashes the coordinate) to break the repeat.
+    """
+    return sheet([sea(phase) for phase in range(len(SEA_PHASES))], len(SEA_PHASES))

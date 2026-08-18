@@ -145,7 +145,9 @@ def main() -> None:
                     args.out / "iso_buildings" / f"{bid}_{fac.team}.png",
                 )
 
-    print("building autotile sheets (roads, rivers, coast, shoals, woods, bridges)")
+    print(
+        "building autotile sheets (roads, rivers, coast, shoals, woods, bridges, sea)"
+    )
     from spritegen import autotile
 
     _write(
@@ -168,6 +170,7 @@ def main() -> None:
         args.out / "autotiles" / "woods.png",
     )
     _write(autotile.bridge_sheet(), args.out / "autotiles" / "bridges.png")
+    _write(autotile.sea_sheet(), args.out / "autotiles" / "sea.png")
 
     print("rendering previews")
     _write(atlas.preview(units_atlas, 2), args.out / "preview_units.png")
