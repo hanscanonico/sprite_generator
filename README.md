@@ -123,8 +123,10 @@ that pipeline's paste step can be pointed at this art instead.
    shadow, ships sit in a flat displacement shadow with foam hugging the
    waterline, air units hover high over a small detached one.
 4. **`spritegen/buildings.py` / `spritegen/terrain.py`** — voxel property
-   buildings and nature props composed onto 64px tile grounds that keep
-   `tools/generate_tiles.gd`'s palette and darkened-edge grid convention.
+   buildings and nature props composed onto 64px tile grounds. The grounds
+   keep `tools/generate_tiles.gd`'s hues but not its values: every tone is
+   authored under `terrain.TERRAIN_VALUE_CEILING` (and every building under
+   `BUILDING_KEY_CEILING`) so the top of the ramp stays the units'.
 5. **`spritegen/autotile.py`** — the direction-aware road/river/bridge/
    coast/shoal variants exported under `autotiles/`.
 6. **`spritegen/atlas.py`** — assembles atlases, exports cells, renders the
