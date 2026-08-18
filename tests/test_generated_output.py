@@ -630,24 +630,29 @@ class RiverBanks(unittest.TestCase):
     def _ground(self) -> set[tuple[int, int, int]]:
         return set(opaque_pixels(terrain._ground(GRASS, PLAINS_SALT)))
 
-    def _hard_edged(self, mask: int):
+    def _hard_edged(self, mask: int, outline=None):
         """The tile as it was drawn before this pass: water straight onto the
-        plate, no bank between them."""
+        plate, its only lip the one-pixel outline the edge pass drew."""
         t = terrain.plains()
         autotile._fill_arms(t, mask, autotile._WLO, autotile._WHI, WATER)
+        if outline is not None:
+            autotile._edge_pass(t, lambda c: c == WATER, WATER_DARK, outline)
         return t
 
-    def _grass_touching_water(self, tile) -> int:
+    def _water_meeting_no_bank(self, tile) -> int:
+        """Water pixels with a neighbour that is neither water nor bank — the
+        waterline running straight onto the plate or onto a bare outline."""
         px = tile.convert("RGB").load()
-        ground = self._ground()
+        bank = set(self.BANK_TONES)
         return sum(
             1
-            for y in range(1, CELL - 1)
-            for x in range(1, CELL - 1)
-            if px[x, y] in ground
+            for y in range(CELL)
+            for x in range(CELL)
+            if px[x, y] in self.WATER_FAMILY
             and any(
-                px[nx, ny] in self.WATER_FAMILY
+                px[nx, ny] not in self.WATER_FAMILY and px[nx, ny] not in bank
                 for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1))
+                if 0 <= nx < CELL and 0 <= ny < CELL
             )
         )
 
@@ -687,11 +692,17 @@ class RiverBanks(unittest.TestCase):
                     self.assertLessEqual(terrain.luminance(c), TERRAIN_VALUE_CEILING)
 
     def test_every_bank_edge_carries_a_lip(self):
-        self.assertGreater(self._grass_touching_water(self._hard_edged(E | W)), 0)
+        # both controls are how the river used to be drawn: bare water on the
+        # plate, and water fenced by the one-pixel dark-grass outline the
+        # round-5 review read as "a pale outline, no shore blend"
+        self.assertGreater(self._water_meeting_no_bank(self._hard_edged(E | W)), 0)
+        self.assertGreater(
+            self._water_meeting_no_bank(self._hard_edged(E | W, terrain.GRASS_DARK)), 0
+        )
         for mask in range(16):
             with self.subTest(mask=mask):
                 self.assertEqual(
-                    self._grass_touching_water(autotile.river_tile(mask)), 0
+                    self._water_meeting_no_bank(autotile.river_tile(mask)), 0
                 )
 
     def test_a_run_that_terminates_tapers_to_a_nose(self):
