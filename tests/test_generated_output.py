@@ -238,6 +238,15 @@ class ValueCeiling(unittest.TestCase):
     # this budget is the size of — the masonry itself is held to none of it,
     # one test below, where the unowned row has neither.
     PROPERTY_GLAZING_SHARE = 0.02
+    # Round 7 measured the other half of that finding: holding the top 5% of a
+    # property under L175 said nothing about where the MASS of a wall sat, and
+    # it sat at L150-164 lit — exactly the band every faction's S4 top slot
+    # occupies (L135-156), so a unit standing on a property had its own lit
+    # planes to read against a wall of the same value. This bounds the lit half
+    # of a property, which is the wall and roof area a silhouette is actually
+    # seen against: L107-138 before the masonry ladder stepped down a rung,
+    # L79-111 after.
+    PROPERTY_MASS_CEILING = 120.0
 
     def _tiles(self):
         for tid in terrain.TERRAIN_ORDER:
@@ -280,6 +289,19 @@ class ValueCeiling(unittest.TestCase):
                     px = opaque_pixels(atlas.building_cell(bid, fac))
                     share = share_above(px, TERRAIN_VALUE_CEILING)
                     self.assertLessEqual(share, self.PROPERTY_GLAZING_SHARE)
+
+    def test_the_wall_and_roof_mass_stays_under_the_slot_units_key_in(self):
+        for bid in sorted(terrain.PROPERTY):
+            for fac in FACTIONS:
+                with self.subTest(building=bid, faction=fac.key):
+                    lums = sorted(
+                        terrain.luminance(c)
+                        for c in opaque_pixels(atlas.building_cell(bid, fac))
+                    )
+                    lit_half = lums[len(lums) // 2 :]
+                    self.assertLess(
+                        statistics.median(lit_half), self.PROPERTY_MASS_CEILING
+                    )
 
     def test_property_buildings_only_glint_above_the_key_ceiling(self):
         for bid in sorted(terrain.PROPERTY):
@@ -991,10 +1013,33 @@ class CanopyLight(unittest.TestCase):
     body tone with a rim and a dark green unit had nothing to cross. The plane
     is a value step INSIDE the tile: it may not raise the tile's key, which is
     `WoodsSeam` and `ValueCeiling`'s to refuse, and both still pass.
+
+    Round 6's plane was L143 over a sixteenth of the tile and moved the
+    measurement by 0.021, so round 7 restates the numbers as what the plane is
+    FOR: a dark green hull has to have something to be seen against, and a
+    plane that thin at that value is not it. Every bound below is set where
+    the round-6 art fails it.
     """
 
-    MIN_STEP = 40.0  # a lit plane a player can see, in luma
-    MIN_SHARE = 0.05  # and enough of the canopy to be a plane rather than a fleck
+    MIN_STEP = 68.0  # a lit plane a player can see, in luma (round 6: 63.8)
+    MIN_SHARE = 0.24  # lit plane and shoulder together (round 6: 0.164)
+    MIN_TOP_SHARE = 0.12  # the plane alone, so a widened shoulder cannot pay
+    # for it (round 6: 0.061)
+    # What the plane exists to silhouette: the darkest green hull that can
+    # stand on a woods tile. A unit's body slot is the plane a tile is mostly
+    # read against, and the round-6 canopy cleared verdant's by 34L — inside
+    # one ramp step of that same ramp, which is the collision the harness
+    # measured. Round 7's sub took ship hulls a band lower still (the under
+    # slot, verdant L63), but no boat ever stands in woods and a darker hull
+    # only clears this plane by more, so the body slot stays the bound.
+    HULL_CLEARANCE = 40.0
+
+    def _verdant_hull(self) -> float:
+        return terrain.luminance(RAMPS["verdant"][S_BODY])
+
+    def test_the_lit_plane_clears_a_dark_green_hull(self):
+        clearance = terrain.luminance(terrain.CANOPY_TOP) - self._verdant_hull()
+        self.assertGreater(clearance, self.HULL_CLEARANCE)
 
     def test_the_lit_plane_is_a_real_value_step_over_the_canopy(self):
         step = terrain.luminance(terrain.CANOPY_TOP) - terrain.luminance(terrain.CANOPY)
@@ -1024,7 +1069,9 @@ class CanopyLight(unittest.TestCase):
                 lit = sum(
                     1 for c in px if c in (terrain.CANOPY_TOP, terrain.CANOPY_MID)
                 )
+                top = sum(1 for c in px if c == terrain.CANOPY_TOP)
                 self.assertGreater(lit / len(px), self.MIN_SHARE)
+                self.assertGreater(top / len(px), self.MIN_TOP_SHARE)
 
 
 class RowSeparation(unittest.TestCase):

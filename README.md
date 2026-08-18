@@ -197,10 +197,19 @@ that pipeline's paste step can be pointed at this art instead.
    rather than by its own value — a voxel top face is the material scaled
    1.3x and rim-lit on top of that — so the greys are dark enough that no
    wall reaches the units' band; a lit window and a pane of glazing are the
-   only things that glint into it (`BUILDING_KEY_CEILING`). The woods canopy
-   carries a lit top plane so a dark or green unit standing on it has a value
-   step to separate against, and that plane still stops under the plains
-   ground's own band, which is what keeps the woods/plains seam rule true.
+   only things that glint into it (`BUILDING_KEY_CEILING`). Under the cap is
+   not the same thing as readable, though, so the ladder sits a further rung
+   down: the **mass** of every wall, lot and roof is dark — the lit half of a
+   property measures L79-111 — and the rung it used to be is **trim, drawn
+   only as a line**: a parapet, a coping, a ridge, a seam. Roofs follow the
+   same rule inside the faction's own ramp, the theme's dark as the plane and
+   the theme colour as the ridge, because a `body` roof lit to L152 sat
+   exactly on a verdant unit's own top slot. The woods canopy carries a lit
+   top plane so a dark or green unit standing on it has a value step to
+   separate against: it is authored one step under the dimmest plains pixel
+   and painted over most of each crown rather than its cap alone, which is
+   what makes it something a green hull is actually seen against while the
+   woods/plains seam rule stays true.
 5. **`spritegen/autotile.py`** — the direction-aware road/river/bridge/
    coast/shoal/woods variants and the sea's phase variants, exported under
    `autotiles/`.

@@ -66,14 +66,21 @@ CANOPY = (36, 96, 44)
 CANOPY_DK = (24, 70, 33)
 CANOPY_LT = (82, 152, 74)
 TRUNK = (109, 76, 65)
-# The canopy's lit top plane (design review round 6). A crown drawn as one
-# body tone with a rim is a green disc, and a dark or green unit standing on it
-# had nothing to separate against — a verdant bomber on woods measured 0.00-0.72
-# ramp steps. The top of each crown catches the light the whole sheet is lit
-# from, which is a value step inside the tile rather than a brighter tile: both
-# tones are mixed toward the plains ground and stop under its band, so the
-# woods plate still cannot out-key the plains it borders.
-CANOPY_TOP = mix(CANOPY_LT, GRASS, 0.45)
+# The canopy's lit top plane (design review rounds 6 and 7). A crown drawn as
+# one body tone with a rim is a green disc, and a dark or green unit standing
+# on it had nothing to separate against — a verdant bomber on woods measured
+# 0.00-0.72 ramp steps. The top of each crown catches the light the whole sheet
+# is lit from, which is a value step inside the tile rather than a brighter
+# tile: both tones are mixed toward the plains ground and stop under its band,
+# so the woods plate still cannot out-key the plains it borders.
+# Round 6 authored that plane at L143 over a sixteenth of the tile and moved
+# verdant-on-woods by 0.021 — a nudge, because a plane that narrow and that
+# close to a verdant hull's own top slot (L153) is not something a silhouette
+# crosses. Round 7 takes it as far as the seam rule allows: the tone sits one
+# luma step under the dimmest plains pixel, which is the ceiling, and the band
+# it is painted over is widened (`_crown_light`) until the lit top is the
+# crown's dominant plane rather than a fleck on it.
+CANOPY_TOP = mix(CANOPY_LT, GRASS, 0.78)
 CANOPY_MID = mix(CANOPY_TOP, CANOPY, 0.5)
 
 # Grain salts for the two GRASS grounds. They differ so a wood's clearings do
@@ -251,9 +258,9 @@ def woods(open_edges: int = 0) -> Image.Image:
                     c = CANOPY_LT if dx + dy * 1.5 < 0 else CANOPY_DK
                 elif h01(xx, yy, 34) < 0.14:
                     c = CANOPY_DK  # leaf clumps
-                elif light > 0.55:
+                elif light > 0.24:
                     c = CANOPY_TOP  # the crown's sunlit top plane
-                elif light > 0.22:
+                elif light > -0.08:
                     c = CANOPY_MID  # and its shoulder, so the step is a roll
                 else:
                     n = (h01(xx, yy, 33) - 0.5) * 0.12
