@@ -74,7 +74,11 @@ shadow, air units a half-tone one offset down-right with ground showing
 between, ships a displacement shadow with waterline foam. The sub carries a
 **wake** on top of that — running foam down its own underside and trailing off
 the stern — because a hull with no freeboard has nothing else to separate it
-from open sea. Nothing a unit
+from open sea. Its hull and awash deck also sit a band under every other keel
+(the under and shadow slots), so the sneak boat is the darkest ship in the
+line and separates as a contrast pair — dark hull against mid water, under a
+lit sail and a light wake edge — rather than by out-valuing the sea, which is
+a contest a boat awash cannot win. Nothing a unit
 emits is semi-transparent — every shadow and fleck is an opaque dither,
 because partial alpha is a blurred halo at cut-in scale.
 

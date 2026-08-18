@@ -288,6 +288,10 @@ def _accent(slot: int) -> MaterialSlot:
 UNIT_MATERIALS: dict[str, MaterialSlot] = {
     "hull": _fac(S_BODY),
     "hull_dk": _fac(S_SHADOW),
+    # One band under the shadow plane: the awash hull of a boat that has to
+    # read as the darkest thing afloat (see units.sub). Still a faction slot,
+    # so a dark hull is a faction-dark hull.
+    "hull_under": _fac(S_UNDER),
     "hull_lt": _fac(S_TOP),
     "body": _fac(S_TOP),
     "body_dk": _fac(S_BODY),

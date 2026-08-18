@@ -695,30 +695,44 @@ def cruiser() -> Model:
 
 
 def sub() -> Model:
-    """Attack submarine: the LOW one — decks awash, a beamy saddle amidships
-    riding the waterline under one prominent sail with dive planes and
-    periscopes."""
+    """Attack submarine: the LOW one and the DARK one — decks awash, a beamy
+    saddle amidships riding the waterline under one prominent sail with dive
+    planes and periscopes."""
     m = Model()
-    # decks awash: one dark waterline row end to end, one livery deck row of
-    # freeboard that stops short of the tapered bow and stern. The saddle
-    # tanks widen both rows amidships: the round-4 mass finding measured the
-    # sub the smallest sprite on the sheet at 22.9% legibility, and a hull
-    # two voxels wide leaves a deck the player cannot see is a deck.
-    m.box(3, 4, 0, 21, 0, 0, "hull_dk")
-    m.box(2, 5, 3, 19, 0, 0, "hull_dk")
-    m.box(3, 4, 1, 19, 1, 1, "hull")
-    m.box(2, 5, 4, 18, 1, 1, "hull")
+    # decks awash: one waterline row end to end, one deck row of freeboard
+    # that stops short of the tapered bow and stern. The saddle tanks widen
+    # both rows amidships: the round-4 mass finding measured the sub the
+    # smallest sprite on the sheet at 22.9% legibility, and a hull two voxels
+    # wide leaves a deck the player cannot see is a deck.
+    #
+    # Both rows sit a band under every other keel — under slot at the
+    # waterline, shadow slot on the deck — so the sneak boat is the darkest
+    # ship in the line. Round 6 gave the hull its mass back and the hull then
+    # medianed into the water's own value band, which is a hull-value contest
+    # the sub cannot win from a mid slot; the separation it wins instead is a
+    # contrast pair, dark hull against mid water with the light on the sail
+    # and the wake edge.
+    m.box(3, 4, 0, 21, 0, 0, "hull_under")
+    m.box(2, 5, 3, 19, 0, 0, "hull_under")
+    m.box(3, 4, 1, 19, 1, 1, "hull_dk")
+    m.box(2, 5, 4, 18, 1, 1, "hull_dk")
+    # the saddle-tank crowns amidships are the one lit run on the boat's own
+    # hull: the water breaks over them beside the sail, and their leading
+    # edges are what carry the sub's share of the band above L200.
+    m.box(2, 2, 8, 14, 1, 1, "hull")
+    m.box(5, 5, 8, 14, 1, 1, "hull")
     # deck hatches fore and aft of the sail
     m.set(3, 16, 1, "body_lt")
     m.set(4, 4, 1, "body_lt")
     # the sail: one prominent conning tower, the silhouette's single fin —
     # raised a voxel over the round-3 model so the fin, not the deck, is what
-    # separates the boat from open sea; its top band keeps the pure team color
-    m.box(3, 4, 9, 13, 2, 5, "hull_dk")
+    # separates the boat from open sea. It carries the boat's light: body
+    # slot up the tower, the pure team colour on its top band.
+    m.box(3, 4, 9, 13, 2, 5, "hull")
     m.box(3, 4, 9, 13, 6, 6, "body")
-    # dive planes off the sail flanks
-    m.box(2, 2, 11, 12, 3, 3, "hull_dk")
-    m.box(5, 5, 11, 12, 3, 3, "hull_dk")
+    # dive planes off the sail flanks, in the sail's own band
+    m.box(2, 2, 11, 12, 3, 3, "hull")
+    m.box(5, 5, 11, 12, 3, 3, "hull")
     # periscope and attack scope over the sail
     m.box(3, 3, 11, 11, 7, 8, "steel")
     m.set(4, 13, 7, "steel")
