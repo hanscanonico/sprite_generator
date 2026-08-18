@@ -25,10 +25,13 @@ from .terrain import (
     SAND,
     SAND_DARK,
     SNOW,
+    TIMBER,
+    TIMBER_DARK,
     WATER,
     WATER_DARK,
     WATER_LIGHT,
     _ground,
+    _lit,
     _rect,
     plains,
     sea,
@@ -130,24 +133,24 @@ def river_tile(mask: int, salt: int = 0) -> Image.Image:
 
 
 def _bridge_h() -> Image.Image:
-    """Horizontal road deck carried over a north-south river."""
+    """Horizontal timber deck carried over a north-south river."""
     t = river_tile(N | S)
     # support shadows in the water above and below the deck
     for sy in (14, 46):
         _rect(t, 24, sy, 7, 4, mix(WATER, (10, 30, 60), 0.35))
         _rect(t, 34, sy, 7, 4, mix(WATER, (10, 30, 60), 0.35))
-    # deck, slightly wider than the road band it joins
-    _rect(t, 0, 20, 64, 24, ROAD)
-    _rect(t, 0, 20, 64, 2, mix(ROAD, (255, 255, 255), 0.25))  # lit rail
-    _rect(t, 0, 42, 64, 2, ROAD_DARK)  # shaded rail
-    _rect(t, 0, 22, 64, 1, ROAD_DARK)
+    # timber deck, slightly wider than the gravel road band it joins
+    _rect(t, 0, 20, 64, 24, TIMBER)
+    _rect(t, 0, 20, 64, 2, _lit(TIMBER, 0.25))  # lit rail
+    _rect(t, 0, 42, 64, 2, TIMBER_DARK)  # shaded rail
+    _rect(t, 0, 22, 64, 1, TIMBER_DARK)
     for sx in range(2, 64, 8):
-        _rect(t, sx, 20, 2, 4, ROAD_DARK)  # railing posts
-        _rect(t, sx, 40, 2, 4, ROAD_DARK)
-    _rect(t, 12, 30, 9, 3, ROAD_DARK)  # centre dashes
-    _rect(t, 43, 30, 9, 3, ROAD_DARK)
+        _rect(t, sx, 20, 2, 4, TIMBER_DARK)  # railing posts
+        _rect(t, sx, 40, 2, 4, TIMBER_DARK)
+    for sy in range(24, 42, 6):
+        _rect(t, 0, sy, 64, 1, mix(TIMBER, TIMBER_DARK, 0.55))  # plank courses
     for sx in (21, 43):
-        _rect(t, sx, 24, 1, 16, mix(ROAD, ROAD_DARK, 0.5))  # plank seams
+        _rect(t, sx, 24, 1, 16, mix(TIMBER, TIMBER_DARK, 0.5))  # plank seams
     return t
 
 

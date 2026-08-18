@@ -12,13 +12,25 @@ from __future__ import annotations
 
 import statistics
 import unittest
+from collections import Counter
 
 from PIL import Image
 
 from spritegen import atlas, autotile, terrain
 from spritegen.autotile import E, N, S, W
 from spritegen.palette import FACTIONS, faction_by_key, resolve
-from spritegen.terrain import CELL, ROAD, ROAD_DARK, WATER, WATER_DARK
+from spritegen.terrain import (
+    BUILDING_KEY_CEILING,
+    CELL,
+    ROAD,
+    ROAD_DARK,
+    TERRAIN_MEDIAN_CEILING,
+    TERRAIN_VALUE_CEILING,
+    TIMBER,
+    WATER,
+    WATER_DARK,
+    luminance,
+)
 from spritegen.units import ATLAS_ORDER
 
 ROAD_TONES = {ROAD, ROAD_DARK}
@@ -35,6 +47,27 @@ EDGE_PROBES = (
 def saturation(rgb: tuple[int, int, int]) -> float:
     hi, lo = max(rgb), min(rgb)
     return 0.0 if hi == 0 else (hi - lo) / hi
+
+
+def opaque_pixels(img) -> list[tuple[int, int, int]]:
+    """Every solid pixel of a sprite or tile, colour only."""
+    img = img.convert("RGBA")
+    px = img.load()
+    return [
+        px[x, y][:3]
+        for y in range(img.height)
+        for x in range(img.width)
+        if px[x, y][3] > 200
+    ]
+
+
+def share_above(pixels, level: float) -> float:
+    """Fraction of `pixels` brighter than `level` — the ramp band measure."""
+    return sum(1 for c in pixels if luminance(c) > level) / len(pixels)
+
+
+def dominant(pixels) -> tuple[int, int, int]:
+    return Counter(pixels).most_common(1)[0][0]
 
 
 def faction_pixels(sprite_a, sprite_b) -> list[tuple[int, int, int]]:
@@ -148,6 +181,102 @@ class Livery(unittest.TestCase):
                 self.assertLess(tinted, opaque * 0.5)  # the rest is concrete
 
 
+class ValueCeiling(unittest.TestCase):
+    """The top of the ramp belongs to units.
+
+    The 2026-08-17 fix spec measured the rule inverted: plains sat at median
+    L174, road L183 and shoal L202 while unit pixels top out at L145-165 at
+    the 95th percentile, so the ground out-keyed 95% of every army on the
+    board and property highlights out-keyed them by ~90L. These are the three
+    numbers that hold it the right way up.
+    """
+
+    # Highlights that may cross into the unit band: a lit window, a windsock.
+    # Units are held to carrying 3% of their pixels above the building
+    # ceiling, so a building glinting at a third of that cannot out-key one.
+    BUILDING_GLINT_SHARE = 0.01
+    TERRAIN_HIGHLIGHT_SHARE = 0.05
+
+    def _tiles(self):
+        for tid in terrain.TERRAIN_ORDER:
+            for fac in FACTIONS:
+                yield tid, fac, opaque_pixels(terrain.tile(tid, fac))
+                if tid not in terrain.PROPERTY:
+                    break
+
+    def test_no_tile_medians_into_the_unit_band(self):
+        for tid, fac, px in self._tiles():
+            with self.subTest(tile=tid, faction=fac.key):
+                median = statistics.median(luminance(c) for c in px)
+                self.assertLess(median, TERRAIN_MEDIAN_CEILING)
+
+    def test_tiles_keep_their_highlight_share_off_the_unit_band(self):
+        for tid, fac, px in self._tiles():
+            with self.subTest(tile=tid, faction=fac.key):
+                share = share_above(px, TERRAIN_VALUE_CEILING)
+                self.assertLessEqual(share, self.TERRAIN_HIGHLIGHT_SHARE)
+
+    def test_property_buildings_only_glint_above_the_key_ceiling(self):
+        for bid in sorted(terrain.PROPERTY):
+            for fac in FACTIONS:
+                with self.subTest(building=bid, faction=fac.key):
+                    px = opaque_pixels(atlas.building_cell(bid, fac))
+                    share = share_above(px, BUILDING_KEY_CEILING)
+                    self.assertLessEqual(share, self.BUILDING_GLINT_SHARE)
+
+    def test_the_unit_sheet_still_out_keys_every_tile(self):
+        units = sorted(luminance(c) for c in opaque_pixels(atlas.build_units_atlas()))
+        top_of_ramp = units[int(len(units) * 0.99)]
+        for tid, fac, px in self._tiles():
+            with self.subTest(tile=tid, faction=fac.key):
+                self.assertLess(max(luminance(c) for c in px), top_of_ramp)
+
+
+class GroundSeparation(unittest.TestCase):
+    """Road, bridge and shoal were three tans within 19L of each other, two of
+    them sharing a dominant colour outright — which is no movement-cost signal
+    at all. They are now gravel, timber and sand, a value step and a hue apart.
+    """
+
+    MIN_SEPARATION = 18.0
+    # The dry half of the shoal tile: below it the tile is water and foam.
+    DRY_SAND = (0, 0, CELL, 40)
+
+    def _grounds(self) -> dict[str, tuple[int, int, int]]:
+        shoal = terrain.tile("shoal", FACTIONS[0]).crop(self.DRY_SAND)
+        return {
+            "road": dominant(opaque_pixels(terrain.tile("road", FACTIONS[0]))),
+            "bridge": dominant(opaque_pixels(terrain.tile("bridge", FACTIONS[0]))),
+            "shoal": dominant(opaque_pixels(shoal)),
+        }
+
+    def test_road_and_bridge_no_longer_share_a_colour(self):
+        grounds = self._grounds()
+        self.assertNotEqual(grounds["road"], grounds["bridge"])
+
+    def test_the_three_grounds_stay_a_value_step_apart(self):
+        grounds = self._grounds()
+        for a, b in (("road", "bridge"), ("road", "shoal"), ("bridge", "shoal")):
+            with self.subTest(pair=(a, b)):
+                gap = abs(luminance(grounds[a]) - luminance(grounds[b]))
+                self.assertGreaterEqual(gap, self.MIN_SEPARATION)
+
+    def test_plains_reads_apart_from_the_ground_it_borders(self):
+        grounds = self._grounds()
+        plains = dominant(opaque_pixels(terrain.tile("plains", FACTIONS[0])))
+        # Grass carries a hue no other ground has, so colour distance is what
+        # separates it from sand — but against gravel, the ground it shares a
+        # board edge with most often, the value step has to be real too or a
+        # 1:4 downsample averages the two into one grey-green.
+        for tid, ground in grounds.items():
+            with self.subTest(against=tid):
+                gap = sum((a - b) ** 2 for a, b in zip(plains, ground)) ** 0.5
+                self.assertGreaterEqual(gap, 40.0)
+        self.assertGreaterEqual(
+            abs(luminance(plains) - luminance(grounds["road"])), 15.0
+        )
+
+
 class AutotileMasks(unittest.TestCase):
     """Sheets laid out row-major, bits N=1 E=2 S=4 W=8."""
 
@@ -194,9 +323,10 @@ class AutotileMasks(unittest.TestCase):
     def test_both_bridge_decks_are_exported(self):
         ew = autotile.bridge_tile(True).convert("RGB").load()
         ns = autotile.bridge_tile(False).convert("RGB").load()
-        # E-W deck spans the tile horizontally, N-S vertically
-        self.assertEqual({ew[0, CELL // 2], ew[CELL - 1, CELL // 2]}, {ROAD})
-        self.assertEqual({ns[CELL // 2, 0], ns[CELL // 2, CELL - 1]}, {ROAD})
+        # E-W deck spans the tile horizontally, N-S vertically — in timber,
+        # which is what tells a bridge from the road it carries
+        self.assertEqual({ew[0, CELL // 2], ew[CELL - 1, CELL // 2]}, {TIMBER})
+        self.assertEqual({ns[CELL // 2, 0], ns[CELL // 2, CELL - 1]}, {TIMBER})
         sheet = autotile.bridge_sheet()
         self.assertEqual(sheet.size, (2 * (CELL + 2) + 2, CELL + 4))
         for i, deck in enumerate(

@@ -1,9 +1,9 @@
 """The 14 terrain tiles, drawn native at the 64px atlas cell.
 
-Ground colors mirror the game's tools/generate_tiles.gd so a regenerated
-atlas drops into the same map without shifting the world's palette; the
-detail on top (painted canopies, terraced mountains, foam, wear) is what
-this generator adds. Ground fills are seamless — repeated tiles butt with no
+Ground hues are the game's tools/generate_tiles.gd palette, revalued under
+the ceiling below so scenery never out-keys an army; the detail on top
+(painted canopies, terraced mountains, foam, wear) is what this generator
+adds. Ground fills are seamless — repeated tiles butt with no
 border treatment (design review 2026-08-13: the old darkened-edge
 convention read as a seam grid over any open field). Non-property tiles
 are identical on every faction row; property tiles compose a
@@ -20,21 +20,39 @@ from .voxel import place_in_cell, render
 
 CELL = 64
 
-# generate_tiles.gd palette (hex constants), the map's established hues.
-# SAND and SNOW sit below the original hex values on purpose: terrain must
-# never outshine a unit (see VALUE_CEILING), and those two were the only
-# ground tones over the line.
-GRASS = (120, 200, 80)  # 78c850
-GRASS_DARK = (90, 166, 60)  # 5aa63c
-ROAD = (201, 184, 132)  # c9b884
-ROAD_DARK = (168, 152, 104)  # a89868
+# The terrain value ceiling (fix spec round 4, item 7). The rule was not
+# merely unimplemented, it was inverted: plains sat at median L174, road L183
+# and shoal L202 while unit pixels top out at L145-165 at the 95th percentile,
+# so the ground out-keyed 95% of every army on the board. The top of the ramp
+# is reserved for units — L175-255 is theirs — and terrain is authored under
+# that line rather than dimmed afterwards, because a post-multiply over a
+# finished tile flattens the contrast that separates one ground from another.
+TERRAIN_VALUE_CEILING = 175.0  # no more than 5% of a tile's pixels above it
+TERRAIN_MEDIAN_CEILING = 165.0  # and no tile's median may reach it
+# Property buildings out-keyed units by ~90L (highlights at L248 against a
+# unit 95th percentile of 155). Units carry their own highlight band above
+# L200; a building may only glint into it — lit windows, glazing — so its
+# share there stays a third of the share the unit sheet is held to.
+BUILDING_KEY_CEILING = 200.0
+
+# generate_tiles.gd's hues, revalued under the ceiling above. The hues are the
+# map's own; what moved is their value, plus the three tans that had collapsed
+# into one: road, bridge deck and shoal sand now sit ~18L apart with a hue
+# split — gravel grey, timber brown, beach sand — so movement cost reads from
+# across the room.
+GRASS = (108, 181, 73)  # L158
+GRASS_DARK = (81, 150, 54)  # L131
+ROAD = (146, 142, 133)  # gravel, L142 — road is ground
+ROAD_DARK = (115, 111, 103)  # L112
+TIMBER = (150, 120, 87)  # bridge deck, L124 — bridge is structure
+TIMBER_DARK = (113, 90, 65)  # L93
 WATER = (63, 143, 220)  # 3f8fdc
 WATER_DARK = (42, 111, 191)  # 2a6fbf
-WATER_LIGHT = (124, 196, 240)  # 7cc4f0
-SAND = (219, 206, 160)  # e0d3a4 pulled under the ceiling
-SAND_DARK = (196, 181, 133)  # c4b585
+WATER_LIGHT = (113, 179, 219)  # L168
+SAND = (178, 166, 127)  # L166
+SAND_DARK = (150, 139, 106)  # L139
 ASPHALT = (111, 116, 124)  # 6f747c
-SNOW = (202, 208, 216)  # cool foam/marking grey, capped (was eeeeee)
+SNOW = (168, 174, 182)  # cool foam/marking grey, L173
 
 # Woods canopy tones (design review round 3): the tile is a filled canopy
 # with its own value band — clearly darker than plains underfoot and than
@@ -45,26 +63,22 @@ CANOPY_DK = (24, 70, 33)
 CANOPY_LT = (82, 152, 74)
 TRUNK = (109, 76, 65)
 
-# Terrain value ceiling (design review round 3): the eye must go to units,
-# so no ground pixel may reach the unit sheet's top-face highlights (their
-# p99 luminance is ~0.97). Every non-property tile is passed through
-# _cap_value; the tones above are authored under the line so the cap is a
-# guarantee, not the look.
-VALUE_CEILING = 0.82
+
+def luminance(c: RGB) -> float:
+    """Rec. 709 luma, the scale every ceiling in this module is stated on."""
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
 
 
-def _cap_value(img: Image.Image) -> Image.Image:
-    """Scale any pixel brighter than VALUE_CEILING back down onto it."""
-    ceil = VALUE_CEILING * 255.0
-    px = img.load()
-    for yy in range(img.height):
-        for xx in range(img.width):
-            r, g, b, a = px[xx, yy]
-            lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
-            if lum > ceil:
-                k = ceil / lum
-                px[xx, yy] = (round(r * k), round(g * k), round(b * k), a)
-    return img
+def _lit(c: RGB, t: float) -> RGB:
+    """A highlight, held under the ceiling. Lightening is the one way an
+    authored tone leaves its band, so the ceiling is applied here — on the
+    tone, at the moment it is chosen — and scaling keeps its hue."""
+    hi = lighten(c, t)
+    lum = luminance(hi)
+    if lum <= TERRAIN_VALUE_CEILING:
+        return hi
+    k = TERRAIN_VALUE_CEILING / lum
+    return (round(hi[0] * k), round(hi[1] * k), round(hi[2] * k))
 
 
 def _ground(c: RGB, salt: int, grain: float = 0.03) -> Image.Image:
@@ -77,7 +91,7 @@ def _ground(c: RGB, salt: int, grain: float = 0.03) -> Image.Image:
     for by in range(0, CELL, 4):
         for bx in range(0, CELL, 4):
             n = (h01(bx, by, salt) - 0.5) * grain * 2
-            t = lighten(c, n) if n > 0 else darken(c, -n)
+            t = _lit(c, n) if n > 0 else darken(c, -n)
             for yy in range(by, by + 4):
                 for xx in range(bx, bx + 4):
                     px[xx, yy] = (*t, 255)
@@ -111,7 +125,7 @@ def road() -> Image.Image:
     # a few embedded stones
     for sx, sy in ((22, 12), (50, 50), (8, 54), (34, 8)):
         _rect(t, sx, sy, 3, 2, ROAD_DARK)
-        _rect(t, sx, sy, 2, 1, lighten(ROAD, 0.12))
+        _rect(t, sx, sy, 2, 1, _lit(ROAD, 0.12))
     return t
 
 
@@ -135,11 +149,11 @@ def plains() -> Image.Image:
     )
     for i, (sx, sy) in enumerate(spots):
         _rect(t, sx, sy, 3, 2, GRASS_DARK)
-        _rect(t, sx + (i % 2), sy - 1, 1, 1, lighten(GRASS, 0.18))
+        _rect(t, sx + (i % 2), sy - 1, 1, 1, _lit(GRASS, 0.18))
     # a couple of tiny wildflowers so big plains fields don't tile dead flat
     for fx, fy in ((30, 36), (50, 40)):
         _rect(t, fx, fy, 1, 1, SNOW)
-        _rect(t, fx + 1, fy, 1, 1, (235, 179, 63))
+        _rect(t, fx + 1, fy, 1, 1, (214, 163, 57))
     return t
 
 
@@ -188,7 +202,7 @@ def woods() -> Image.Image:
                     c = CANOPY_DK  # leaf clumps
                 else:
                     n = (h01(xx, yy, 33) - 0.5) * 0.12
-                    c = lighten(CANOPY, n) if n > 0 else darken(CANOPY, -n)
+                    c = _lit(CANOPY, n) if n > 0 else darken(CANOPY, -n)
                 px[xx, yy] = (*c, 255)
                 covered[yy][xx] = True
     # contact shadow along the canopy's lower fringe
@@ -214,15 +228,15 @@ def mountain() -> Image.Image:
     base_y = 56
     # (apex_x, apex_y, slope) — summit, right shoulder, low left foothill
     peaks = ((26, 10, 1.2), (46, 27, 1.3), (11, 36, 1.5))
-    rock_hi = (178, 173, 164)
-    rock_lt = (158, 154, 146)
+    rock_hi = (166, 161, 153)
+    rock_lt = (148, 144, 137)
     rock_dk = (117, 113, 108)
     rock_deep = (98, 95, 91)
     edge = (66, 63, 60)
-    # cool light-grey snow, held under VALUE_CEILING: the caps were the
-    # brightest thing on the board, louder than any unit highlight (round 3)
-    snow_lt = (198, 206, 220)
-    snow_dk = (164, 176, 196)
+    # cool light-grey snow, authored under TERRAIN_VALUE_CEILING: the caps
+    # were the brightest thing on the board, louder than any unit highlight
+    snow_lt = (164, 171, 182)
+    snow_dk = (138, 148, 166)
     for x in range(4, 60):
         tops = [int(ay + s * abs(x - ax)) for ax, ay, s in peaks]
         y_top = min(tops)
@@ -323,25 +337,27 @@ def shoal() -> Image.Image:
 
 
 def bridge() -> Image.Image:
+    """A timber deck standing over the water. The deck is deliberately not
+    the road tile's gravel: the two shared one dominant colour, so a bridge
+    read as a road that happened to be wet."""
     t = _water_base(False, 8)
     # support shadows in the water under each pier
     for sx in (8, 28, 48):
         _rect(t, sx, 50, 10, 4, mix(WATER, (10, 30, 60), 0.35))
-    # road deck carried over the water (same band as the old art)
-    _rect(t, 0, 12, 64, 40, ROAD)
-    _rect(t, 0, 12, 64, 2, mix(ROAD, (255, 255, 255), 0.25))  # lit rail
-    _rect(t, 0, 50, 64, 2, ROAD_DARK)  # shaded rail
-    _rect(t, 0, 14, 64, 1, ROAD_DARK)
+    _rect(t, 0, 12, 64, 40, TIMBER)
+    _rect(t, 0, 12, 64, 2, _lit(TIMBER, 0.25))  # lit rail
+    _rect(t, 0, 50, 64, 2, TIMBER_DARK)  # shaded rail
+    _rect(t, 0, 14, 64, 1, TIMBER_DARK)
     # railing posts
     for sx in range(2, 64, 8):
-        _rect(t, sx, 12, 2, 4, ROAD_DARK)
-        _rect(t, sx, 48, 2, 4, ROAD_DARK)
-    # centre dashes matching the road tile
-    _rect(t, 12, 30, 12, 4, ROAD_DARK)
-    _rect(t, 40, 30, 12, 4, ROAD_DARK)
+        _rect(t, sx, 12, 2, 4, TIMBER_DARK)
+        _rect(t, sx, 48, 2, 4, TIMBER_DARK)
+    # plank courses across the deck, the structure's own grain
+    for sy in range(18, 50, 6):
+        _rect(t, 0, sy, 64, 1, mix(TIMBER, TIMBER_DARK, 0.55))
     # deck plank seams
     for sx in (21, 43):
-        _rect(t, sx, 16, 1, 32, mix(ROAD, ROAD_DARK, 0.5))
+        _rect(t, sx, 16, 1, 32, mix(TIMBER, TIMBER_DARK, 0.5))
     return t
 
 
@@ -381,8 +397,8 @@ def _grass_lot(fac: Faction, building: str, salt: int) -> Image.Image:
 def airport(fac: Faction) -> Image.Image:
     t = _ground(ASPHALT, 10, grain=0.024)
     # runway strip across the lower apron
-    _rect(t, 0, 44, 64, 16, lighten(ASPHALT, 0.08))
-    _rect(t, 0, 44, 64, 1, lighten(ASPHALT, 0.25))
+    _rect(t, 0, 44, 64, 16, _lit(ASPHALT, 0.08))
+    _rect(t, 0, 44, 64, 1, _lit(ASPHALT, 0.25))
     _rect(t, 0, 59, 64, 1, darken(ASPHALT, 0.2))
     for sx in range(4, 64, 12):
         _rect(t, sx, 51, 6, 2, SNOW)  # centreline dashes
@@ -440,13 +456,14 @@ _LOT_SALTS = {"city": 12, "base": 13, "hq": 14}
 
 
 def tile(tid: str, fac: Faction) -> Image.Image:
-    """One 64x64 RGBA tile. Non-property tiles ignore the faction and pass
-    through the value cap; property grounds are authored under it and the
-    buildings on top are the units' asset class, not scenery."""
+    """One 64x64 RGBA tile. Non-property tiles ignore the faction; every
+    ground here is authored under TERRAIN_VALUE_CEILING and the buildings a
+    property tile carries under BUILDING_KEY_CEILING, so nothing on the board
+    needs dimming after the fact."""
     if tid in PROPERTY:
         if tid == "airport":
             return airport(fac)
         if tid == "port":
             return port(fac)
         return _grass_lot(fac, tid, _LOT_SALTS[tid])
-    return _cap_value(_PLAIN_TILES[tid]())
+    return _PLAIN_TILES[tid]()
