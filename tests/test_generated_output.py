@@ -45,7 +45,7 @@ from spritegen.terrain import (
     WATER_LIGHT,
     WOODS_SALT,
 )
-from spritegen.units import ATLAS_ORDER, build_model
+from spritegen.units import ATLAS_ORDER, UNITS, build_model
 from spritegen.voxel import render_indexed
 
 ROAD_TONES = {ROAD, ROAD_DARK}
@@ -1231,7 +1231,9 @@ class HullValues(unittest.TestCase):
     `UnitBandCoverage` and `tests/measure_livery.py` make.
     """
 
-    SHIPS = ("battleship", "cruiser", "sub", "lander")
+    # Read off the registry's own cell kind, so a ship added later is held to
+    # the same gate instead of quietly sitting outside a hand-written list.
+    SHIPS = tuple(uid for uid, (_, kind) in UNITS.items() if kind == "sea")
     COMPOSED = UnitBandCoverage.COMPOSED
 
     def _hull_median(self, uid: str, fac) -> float:
