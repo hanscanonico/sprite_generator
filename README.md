@@ -31,6 +31,14 @@ neutral's slate theme included. Weapon silhouettes follow each unit's
 unarmed). Property terrains (city, base, hq, airport, port) are tinted per
 row; every other terrain repeats one tile down its column.
 
+The five property columns are **transparent overlays**: the building, its
+base plate and a dithered drop shadow, with the ground around them left
+empty. Baking the plains green into those cells put a green square around
+every city standing on road or beach; the board paints the ground under a
+property and the building reads as an object on it. Consumers compose
+default ground first, then the property cell — `preview_map.png` does
+exactly that.
+
 Units are painted out of **indexed ramps**: six slots per faction — S0
 contour, S1 under, S2 shadow, S3 body, S4 top, S5 rim — plus one shared
 gunmetal ramp and a small derived ramp per fixed accent. A face normal picks
@@ -97,7 +105,7 @@ python3 -m venv .venv
 | File | Contract |
 | --- | --- |
 | `units_atlas.png` | 1152x320 RGBA — drop-in `assets/tiles/units_atlas.png` |
-| `terrain_atlas.png` | 896x320 RGB — drop-in `assets/tiles/terrain_atlas.png` |
+| `terrain_atlas.png` | 896x320 RGBA — drop-in `assets/tiles/terrain_atlas.png`; property columns carry alpha |
 | `units/<id>_<team>.png` | 90 cells, the inputs `tools/paste_unit_sprites.gd` reads |
 | `iso_buildings/<id>_<team>.png` | 25 property-building cells for `assets/sprites/iso_buildings` |
 | `preview_units.png`, `preview_terrain.png` | 2x atlas contact sheets on checkerboard |

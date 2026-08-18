@@ -9,7 +9,8 @@ the same bytes.
 Outputs (under --out, default ./out):
   units_atlas.png        1152x320 RGBA — drop-in for assets/tiles/units_atlas.png
   units_atlas_b.png      ambient animation frame B (rotors swept, air/sea bobbed)
-  terrain_atlas.png       896x320 RGB  — drop-in for assets/tiles/terrain_atlas.png
+  terrain_atlas.png       896x320 RGBA — drop-in for assets/tiles/terrain_atlas.png
+                          (the five property columns are transparent overlays)
   units/<id>_<team>.png   64x64 RGBA cells for tools/paste_unit_sprites.gd
   iso_buildings/<id>_<team>.png  64x64 RGBA property buildings
   preview_units.png / preview_terrain.png / preview_map.png  review sheets

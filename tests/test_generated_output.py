@@ -107,13 +107,14 @@ class AtlasContract(unittest.TestCase):
         self.assertEqual(img.size, (1152, 320))
         self.assertEqual(img.mode, "RGBA")
 
-    def test_terrain_atlas_is_14_by_5_rgb_cells(self):
+    def test_terrain_atlas_is_14_by_5_rgba_cells(self):
         img = atlas.build_terrain_atlas()
         self.assertEqual(
             img.size, (len(terrain.TERRAIN_ORDER) * 64, len(FACTIONS) * 64)
         )
         self.assertEqual(img.size, (896, 320))
-        self.assertEqual(img.mode, "RGB")
+        # RGBA, not RGB: the property columns carry alpha — see PropertyOverlays.
+        self.assertEqual(img.mode, "RGBA")
 
     def test_every_atlas_row_renders_its_own_faction(self):
         img = atlas.build_units_atlas()
@@ -244,8 +245,14 @@ class ValueCeiling(unittest.TestCase):
                 median = statistics.median(terrain.luminance(c) for c in px)
                 self.assertLess(median, TERRAIN_MEDIAN_CEILING)
 
-    def test_tiles_keep_their_highlight_share_off_the_unit_band(self):
+    def test_grounds_keep_their_highlight_share_off_the_unit_band(self):
+        # Ground only. A property cell has no ground left to hold — it is a
+        # building and its shadow on transparent pixels — and how much of a
+        # building may reach into the unit band is the building ceiling's
+        # question, asked one test below on the same pixels.
         for tid, fac, px in self._tiles():
+            if tid in terrain.PROPERTY:
+                continue
             with self.subTest(tile=tid, faction=fac.key):
                 share = share_above(px, TERRAIN_VALUE_CEILING)
                 self.assertLessEqual(share, self.TERRAIN_HIGHLIGHT_SHARE)
@@ -455,6 +462,89 @@ class TerrainPalette(unittest.TestCase):
                     self.assertLessEqual(
                         self._colours(terrain.tile(tid, fac)), self.PROPERTY_CEILING
                     )
+
+
+class PropertyOverlays(unittest.TestCase):
+    """A property is a building on transparent ground, not a tile of grass.
+
+    Design review rounds 4 and 5: the five property columns baked the plains
+    green into their cells, so a city on road or beach wore a green square.
+    They now carry the building, its base plate and its dithered shadow, and
+    nothing else; the board paints the ground under them.
+    """
+
+    def _cell(self, tid: str, fac) -> Image.Image:
+        return terrain.tile(tid, fac).convert("RGBA")
+
+    def test_only_the_property_columns_carry_transparency(self):
+        img = atlas.build_terrain_atlas()
+        px = img.load()
+        for col, tid in enumerate(terrain.TERRAIN_ORDER):
+            clear = sum(
+                1
+                for y in range(img.height)
+                for x in range(col * CELL, col * CELL + CELL)
+                if px[x, y][3] == 0
+            )
+            with self.subTest(tile=tid):
+                if tid in terrain.PROPERTY:
+                    self.assertGreater(clear, 0)
+                else:
+                    self.assertEqual(clear, 0)
+
+    def test_a_property_leaves_its_corners_to_the_ground(self):
+        # The corners are the ground plate's, wherever the building stands.
+        for tid in sorted(terrain.PROPERTY):
+            for fac in FACTIONS:
+                px = self._cell(tid, fac).load()
+                for corner in (
+                    (0, 0),
+                    (CELL - 1, 0),
+                    (0, CELL - 1),
+                    (CELL - 1, CELL - 1),
+                ):
+                    with self.subTest(tile=tid, faction=fac.key, corner=corner):
+                        self.assertEqual(px[corner][3], 0)
+
+    def test_property_cells_carry_no_semi_transparent_pixel(self):
+        # The units' rule, held for the terrain sheet's buildings too: a soft
+        # alpha edge is a halo on the board and a grey stain in the cut-in.
+        for tid in sorted(terrain.PROPERTY):
+            for fac in FACTIONS:
+                with self.subTest(tile=tid, faction=fac.key):
+                    cell = self._cell(tid, fac)
+                    raw = cell.tobytes()
+                    self.assertEqual({raw[i] for i in range(3, len(raw), 4)}, {0, 255})
+
+    def test_the_shadow_is_an_opaque_dither(self):
+        for tid in sorted(terrain.PROPERTY):
+            for fac in FACTIONS:
+                cell = self._cell(tid, fac)
+                px = cell.load()
+                shadow = [
+                    (x, y)
+                    for y in range(CELL)
+                    for x in range(CELL)
+                    if px[x, y] == (*terrain.SHADOW, 255)
+                ]
+                with self.subTest(tile=tid, faction=fac.key):
+                    self.assertGreater(len(shadow), 0)
+                    # every shadow pixel on one phase of the checkerboard
+                    self.assertEqual({(x + y) % 2 for x, y in shadow}, {0})
+
+    def test_the_tile_and_the_exported_cell_place_one_building(self):
+        # The atlas tile is the exported iso_buildings cell plus a shadow, so
+        # the two surfaces cannot drift into placing the same building twice.
+        for tid in sorted(terrain.PROPERTY):
+            for fac in FACTIONS:
+                tile_px = self._cell(tid, fac).load()
+                cell_px = atlas.building_cell(tid, fac).convert("RGBA").load()
+                with self.subTest(tile=tid, faction=fac.key):
+                    for y in range(CELL):
+                        for x in range(CELL):
+                            if cell_px[x, y][3] == 0:
+                                continue
+                            self.assertEqual(tile_px[x, y], cell_px[x, y])
 
 
 class AutotileMasks(unittest.TestCase):

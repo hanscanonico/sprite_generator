@@ -4,10 +4,11 @@ units_atlas.png   — 18 columns x 5 rows of 64px RGBA cells (1152x320),
                     columns in data/units atlas_col order, rows in
                     SideIdentity order (neutral, meridian, aurora, iron,
                     verdant).
-terrain_atlas.png — 14 columns x 5 rows of 64px RGB cells (896x320),
+terrain_atlas.png — 14 columns x 5 rows of 64px RGBA cells (896x320),
                     columns in tools/generate_tiles.gd order; non-property
-                    columns repeat one tile down all rows, property columns
-                    are faction-tinted per row.
+                    columns repeat one opaque tile down all rows, property
+                    columns are faction-tinted per row and transparent
+                    around the building, for the board to paint under.
 unit cells        — <unit id>_<team>.png, 64x64 RGBA, the inputs
                     tools/paste_unit_sprites.gd consumes.
 building cells    — <building>_<team>.png, 64x64 RGBA transparent-backed
@@ -60,7 +61,7 @@ def build_terrain_atlas() -> Image.Image:
             one = terrain.tile(tid, FACTIONS[0])
             for row in range(len(FACTIONS)):
                 atlas.paste(one, (col * CELL, row * CELL))
-    return atlas.convert("RGB")
+    return atlas
 
 
 def building_cell(bid: str, fac: Faction) -> Image.Image:
@@ -70,12 +71,7 @@ def building_cell(bid: str, fac: Faction) -> Image.Image:
     # materials for greys, and the exported cells must match the tiles.
     sprite = render(buildings.model_for(bid, fac), fac)
     out = Image.new("RGBA", (CELL, CELL), (0, 0, 0, 0))
-    if bid == "airport":
-        cx, bottom = 31, 46
-    elif bid == "port":
-        cx, bottom = 32, 52
-    else:
-        cx, bottom = 32, 61
+    cx, bottom = terrain.PROPERTY_ANCHOR[bid]
     place_in_cell(out, sprite, cx - sprite.width // 2, bottom - sprite.height)
     return out
 
@@ -220,7 +216,14 @@ def build_demo() -> Image.Image:
                 fac_row = fac_for_prop.get((x, y), 1 if x < 5 else 2)
                 fac = FACTIONS[fac_row if tid in terrain.PROPERTY else 0]
                 tile = terrain.tile(tid, fac)
-            img.paste(tile.convert("RGBA"), (x * CELL, y * CELL))
+            if tid in terrain.PROPERTY:
+                # A property ships as a transparent overlay, so the ground
+                # under it is the board's to paint — the default ground,
+                # which is what these cells used to bake.
+                img.paste(terrain.tile("plains", FACTIONS[0]), (x * CELL, y * CELL))
+                img.alpha_composite(tile, (x * CELL, y * CELL))
+            else:
+                img.paste(tile.convert("RGBA"), (x * CELL, y * CELL))
     for uid, fac_row, x, y in _DEMO_UNITS:
         img.alpha_composite(unit_cell(uid, FACTIONS[fac_row]), (x * CELL, y * CELL))
     return img

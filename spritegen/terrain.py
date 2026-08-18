@@ -6,8 +6,9 @@ the ceiling below so scenery never out-keys an army; the detail on top
 adds. Ground fills are seamless — repeated tiles butt with no
 border treatment (design review 2026-08-13: the old darkened-edge
 convention read as a seam grid over any open field). Non-property tiles
-are identical on every faction row; property tiles compose a
-faction-tinted voxel building onto their ground.
+are identical on every faction row; property tiles are transparent
+overlays — a faction-tinted voxel building and its shadow, with the ground
+around them left empty for the board to paint (see `property_overlay`).
 """
 
 from __future__ import annotations
@@ -55,7 +56,6 @@ WATER_DARK = (42, 111, 191)  # 2a6fbf
 WATER_LIGHT = (113, 179, 219)  # L168
 SAND = (178, 166, 127)  # L166
 SAND_DARK = (150, 139, 106)  # L139
-ASPHALT = (111, 116, 124)  # 6f747c
 SNOW = (168, 174, 182)  # cool foam/marking grey, L173
 
 # Woods canopy tones (design review round 3): the tile is a filled canopy
@@ -421,34 +421,62 @@ def reef() -> Image.Image:
 # ---------------------------------------------------------------------------
 
 
-def _grass_lot(fac: Faction, building: str, salt: int) -> Image.Image:
-    t = _ground(GRASS, salt)
-    prop = render(buildings.model_for(building, fac), fac)
-    _paste_prop(t, prop, 32, 61)
-    return t
+# Where each building stands in its cell: (centre x, ground line). One
+# statement, read by the atlas tiles and by the iso_buildings cells, so the
+# two can never place the same building differently.
+PROPERTY_ANCHOR: dict[str, tuple[int, int]] = {
+    "city": (32, 61),
+    "base": (32, 61),
+    "hq": (32, 61),
+    "airport": (31, 46),
+    "port": (32, 52),
+}
+
+# The shadow a building drops on whatever ground it is standing on: the
+# building's own silhouette, shifted down-right away from the light every
+# model is lit from, in the same dither tone the unit cells cast.
+SHADOW = (16, 18, 24)
+SHADOW_OFFSET = (2, 2)
 
 
-def airport(fac: Faction) -> Image.Image:
-    t = _ground(ASPHALT, 10, grain=0.024)
-    # runway strip across the lower apron
-    _rect(t, 0, 44, 64, 16, _lit(ASPHALT, 0.08))
-    _rect(t, 0, 44, 64, 1, _lit(ASPHALT, 0.25))
-    _rect(t, 0, 59, 64, 1, darken(ASPHALT, 0.2))
-    for sx in range(4, 64, 12):
-        _rect(t, sx, 51, 6, 2, SNOW)  # centreline dashes
-    _rect(t, 2, 46, 2, 12, SNOW)  # threshold bars
-    _rect(t, 6, 46, 2, 12, SNOW)
-    prop = render(buildings.model_for("airport", fac), fac)
-    _paste_prop(t, prop, 31, 46)
-    return t
+def _drop_shadow(cell: Image.Image, sprite: Image.Image, x0: int, y0: int) -> None:
+    """Stamp `sprite`'s shadow into `cell`, as a hard 50% dither.
+
+    Opaque pixels on a checkerboard, never partial alpha: the sheet is read
+    at 16px on the board and blown up in the cut-in, and a soft alpha edge is
+    a halo at one end and a grey stain at the other (the units' contact
+    shadows are the same dither for the same reason). Half the pixels missing
+    is what lets the ground the board paints underneath read through.
+    """
+    px = cell.load()
+    sp = sprite.load()
+    dx, dy = SHADOW_OFFSET
+    for yy in range(sprite.height):
+        for xx in range(sprite.width):
+            if sp[xx, yy][3] == 0:
+                continue
+            tx, ty = x0 + xx + dx, y0 + yy + dy
+            if not (0 <= tx < CELL and 0 <= ty < CELL) or (tx + ty) % 2:
+                continue
+            px[tx, ty] = (*SHADOW, 255)
 
 
-def port(fac: Faction) -> Image.Image:
-    t = _water_base(True, 11)
-    _rect(t, 4, 50, 12, 2, WATER)  # harbour ripples
-    _rect(t, 44, 56, 14, 2, WATER)
-    prop = render(buildings.model_for("port", fac), fac)
-    _paste_prop(t, prop, 32, 52)
+def property_overlay(bid: str, fac: Faction) -> Image.Image:
+    """A property cell: the building and its shadow, on transparent ground.
+
+    Design review rounds 4 and 5: baking the plains green into these five
+    columns painted a green square around every city standing on road, beach
+    or asphalt. The building keeps its own base plate — the plate is part of
+    the model, the isometric footprint it stands on — and everything around
+    it is left empty, so the board draws the ground and the building reads as
+    an object sitting on it rather than as a tile of its own.
+    """
+    t = Image.new("RGBA", (CELL, CELL), (0, 0, 0, 0))
+    prop = render(buildings.model_for(bid, fac), fac)
+    cx, bottom = PROPERTY_ANCHOR[bid]
+    x0, y0 = cx - prop.width // 2, bottom - prop.height
+    _drop_shadow(t, prop, x0, y0)
+    place_in_cell(t, prop, x0, y0)
     return t
 
 
@@ -486,18 +514,14 @@ _PLAIN_TILES = {
     "bridge": bridge,
     "reef": reef,
 }
-_LOT_SALTS = {"city": 12, "base": 13, "hq": 14}
 
 
 def tile(tid: str, fac: Faction) -> Image.Image:
-    """One 64x64 RGBA tile. Non-property tiles ignore the faction; every
-    ground here is authored under TERRAIN_VALUE_CEILING and the buildings a
-    property tile carries under BUILDING_KEY_CEILING, so nothing on the board
-    needs dimming after the fact."""
+    """One 64x64 RGBA tile. Non-property tiles ignore the faction and fill
+    their cell; a property tile is a transparent overlay. Every ground here
+    is authored under TERRAIN_VALUE_CEILING and the buildings a property tile
+    carries under BUILDING_KEY_CEILING, so nothing on the board needs dimming
+    after the fact."""
     if tid in PROPERTY:
-        if tid == "airport":
-            return airport(fac)
-        if tid == "port":
-            return port(fac)
-        return _grass_lot(fac, tid, _LOT_SALTS[tid])
+        return property_overlay(tid, fac)
     return _PLAIN_TILES[tid]()
