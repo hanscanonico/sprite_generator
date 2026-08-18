@@ -21,7 +21,7 @@ from PIL import Image
 
 from . import autotile, buildings, terrain
 from .palette import FACTIONS, Faction
-from .units import ATLAS_ORDER, UNITS, build_model
+from .units import ATLAS_ORDER, UNITS, WAKE, build_model
 from .voxel import compose_cell, place_in_cell, render, render_indexed
 
 CELL = 64
@@ -38,7 +38,7 @@ def unit_cell(uid: str, fac: Faction, frame: int = 0) -> Image.Image:
     kind = UNITS[uid][1]
     bottom = _BOB_BOTTOM.get(kind) if frame == 1 else None
     sprite = render_indexed(build_model(uid, frame), fac).image
-    return compose_cell(sprite, kind, bottom=bottom)
+    return compose_cell(sprite, kind, bottom=bottom, wake=uid in WAKE)
 
 
 def build_units_atlas(frame: int = 0) -> Image.Image:

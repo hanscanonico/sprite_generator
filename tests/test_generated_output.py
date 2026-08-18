@@ -291,6 +291,14 @@ class UnitBandCoverage(unittest.TestCase):
 
     BRIGHT_BAND = 200.0
     MIN_RIM_SHARE = 0.03
+    # The band the rows are ordered on, and the three rows that own it.
+    ROW_BAND = 160.0
+    CHROMATIC = ("meridian", "aurora", "verdant")
+    # How far over the widest chromatic row a row may sit. A percentage point
+    # is a row a reader cannot pick out of a contact sheet; the two defects
+    # this bound was written against were 12 pp (neutral, round 5) and 2.4 pp
+    # (iron, round 6).
+    ROW_BAND_TOLERANCE = 0.01
     # The spec's build gate, section 9. No unit is exempt: it was written
     # against a bomber at 46% and a b_copter at 50%, and a gate that names
     # its own violators is a note, not a gate.
@@ -305,6 +313,18 @@ class UnitBandCoverage(unittest.TestCase):
             for x in range(cell.width)
             if px[x, y][3] == 255 and px[x, y][:3] not in self.COMPOSED
         ]
+
+    def _row_bright_shares(self) -> dict[str, float]:
+        """Each row's share of the band above `ROW_BAND`, over its own pixels."""
+        shares = {}
+        for fac in FACTIONS:
+            px = [
+                c
+                for uid in ATLAS_ORDER
+                for _, _, c in self._unit_pixels(atlas.unit_cell(uid, fac))
+            ]
+            shares[fac.key] = share_above(px, self.ROW_BAND)
+        return shares
 
     def test_every_unit_stands_in_the_band_reserved_for_it(self):
         for fac in FACTIONS:
@@ -348,16 +368,30 @@ class UnitBandCoverage(unittest.TestCase):
         4,280-pixel half of the finding and is pinned first.
         """
         self.assertLess(palette.luminance(RAMPS["neutral"][palette.S_TOP]), 160.0)
-        shares = {}
-        for fac in FACTIONS:
-            px = [
-                c
-                for uid in ATLAS_ORDER
-                for _, _, c in self._unit_pixels(atlas.unit_cell(uid, fac))
-            ]
-            shares[fac.key] = share_above(px, 160.0)
-        loudest = max(shares.values())
-        self.assertLess(shares["neutral"], loudest)
+        shares = self._row_bright_shares()
+        self.assertLess(shares["neutral"], max(shares.values()))
+
+    def test_no_row_out_lights_the_chromatic_band(self):
+        """The rows are held to an ORDER, not to a number.
+
+        Round 5 pinned iron's bright share as a ratio against the chromatic
+        rows' at one measured moment; the rim pass then lifted every row, and
+        iron's light-steel S4 sat just under L160 while the chromatic S4s sat
+        well under it, so iron's rims pushed mass over the line that theirs
+        did not — 17.3% of iron's pixels above L160 against 14.0-14.9% for
+        every other row, and the frozen number caught none of it.
+
+        The chromatic three are the band's owners because their bodies are
+        the design-system tokens themselves; neutral and iron are authored
+        around them (khaki for hue separation, inverted for its near-black
+        panels), so what they may never do is out-light the armies whose
+        colour the band is for.
+        """
+        shares = self._row_bright_shares()
+        ceiling = max(shares[k] for k in self.CHROMATIC) + self.ROW_BAND_TOLERANCE
+        for key, share in shares.items():
+            with self.subTest(faction=key):
+                self.assertLessEqual(share, ceiling)
 
 
 class GroundSeparation(unittest.TestCase):
@@ -1079,27 +1113,14 @@ class IndexedPalette(unittest.TestCase):
                 with self.subTest(faction=fac.key, unit=uid):
                     self.assertEqual(stray, [])
 
-    def test_iron_sits_with_the_chromatic_factions_not_above_them(self):
-        """Shipped Iron put 27-51% of its pixels above L160 and used pure
-        white, which made the darkest faction the loudest object on the
-        board. Its share of the bright band now has to sit in the same order
-        of magnitude as the chromatic factions' — measured 3.8% against
-        3.0% — rather than an order above them."""
-        shares = {}
-        for fac in FACTIONS:
-            bright = total = 0
-            for uid in ATLAS_ORDER:
-                sprite = render_indexed(build_model(uid, 0), fac)
-                px = sprite.image.load()
-                for y in range(sprite.image.height):
-                    for x in range(sprite.image.width):
-                        if sprite.mid(x, y) != MID_FACTION:
-                            continue
-                        total += 1
-                        bright += palette.luminance(px[x, y][:3]) > 160
-            shares[fac.key] = bright / total
-        chromatic = max(shares[k] for k in ("meridian", "aurora", "verdant"))
-        self.assertLessEqual(shares["iron"], chromatic * 1.5)
+    # Which row owns the bright band was pinned here as a ratio against one
+    # measured moment, which is what let iron come back as the loudest row
+    # (round 6). It is one gate now and it is an ordering:
+    # `UnitBandCoverage.test_no_row_out_lights_the_chromatic_band`. Pinning a
+    # ramp SLOT instead is the rejected alternative — Iron's mid slots are
+    # brighter than the chromatic ones by design, which is the inverted
+    # identity itself, so only the pixels a model actually spends can say
+    # which row reads loudest.
 
     def test_the_contour_is_the_factions_own_darkest_slot(self):
         """Not a universal black stuck on after tinting — the shipped sheets

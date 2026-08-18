@@ -695,27 +695,33 @@ def cruiser() -> Model:
 
 
 def sub() -> Model:
-    """Attack submarine: the LOW one — decks awash, a sliver riding the
-    waterline under one prominent sail with dive planes and periscopes."""
+    """Attack submarine: the LOW one — decks awash, a beamy saddle amidships
+    riding the waterline under one prominent sail with dive planes and
+    periscopes."""
     m = Model()
     # decks awash: one dark waterline row end to end, one livery deck row of
-    # freeboard that stops short of the tapered bow and stern — the sea
-    # cell's displacement shadow and foam do the rest of the "in the water"
+    # freeboard that stops short of the tapered bow and stern. The saddle
+    # tanks widen both rows amidships: the round-4 mass finding measured the
+    # sub the smallest sprite on the sheet at 22.9% legibility, and a hull
+    # two voxels wide leaves a deck the player cannot see is a deck.
     m.box(3, 4, 0, 21, 0, 0, "hull_dk")
+    m.box(2, 5, 3, 19, 0, 0, "hull_dk")
     m.box(3, 4, 1, 19, 1, 1, "hull")
+    m.box(2, 5, 4, 18, 1, 1, "hull")
     # deck hatches fore and aft of the sail
     m.set(3, 16, 1, "body_lt")
     m.set(4, 4, 1, "body_lt")
-    # the sail: one prominent conning tower, the silhouette's single fin;
-    # its top band keeps the pure team color
-    m.box(3, 4, 10, 13, 2, 4, "hull_dk")
-    m.box(3, 4, 10, 13, 5, 5, "body")
+    # the sail: one prominent conning tower, the silhouette's single fin —
+    # raised a voxel over the round-3 model so the fin, not the deck, is what
+    # separates the boat from open sea; its top band keeps the pure team color
+    m.box(3, 4, 9, 13, 2, 5, "hull_dk")
+    m.box(3, 4, 9, 13, 6, 6, "body")
     # dive planes off the sail flanks
-    m.box(2, 2, 11, 12, 2, 2, "hull_dk")
-    m.box(5, 5, 11, 12, 2, 2, "hull_dk")
+    m.box(2, 2, 11, 12, 3, 3, "hull_dk")
+    m.box(5, 5, 11, 12, 3, 3, "hull_dk")
     # periscope and attack scope over the sail
-    m.box(3, 3, 11, 11, 6, 7, "steel")
-    m.set(4, 13, 6, "steel")
+    m.box(3, 3, 11, 11, 7, 8, "steel")
+    m.set(4, 13, 7, "steel")
     return m
 
 
@@ -782,6 +788,12 @@ UNITS: dict[str, tuple] = {
 # The two units whose model itself changes between ambient frames. Everything
 # else animates (or not) purely in composition — see atlas.unit_cell.
 _FRAMED = ("b_copter", "t_copter")
+
+# Hulls that run awash and so carry a wake (voxel._wake). A ship with
+# freeboard reads against open sea on its own; the sub is the one model whose
+# deck is at the waterline, which is what left it last in the round-4
+# legibility measure.
+WAKE: frozenset[str] = frozenset({"sub"})
 
 
 def build_model(uid: str, frame: int = 0) -> Model:

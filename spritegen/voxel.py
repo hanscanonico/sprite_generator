@@ -450,6 +450,7 @@ def compose_cell(
     cell: int = 64,
     bottom: int | None = None,
     dx: int = 0,
+    wake: bool = False,
 ) -> Image.Image:
     """Center a rendered sprite on a transparent atlas cell with its shadow.
 
@@ -459,7 +460,9 @@ def compose_cell(
     shadow, not its presence: 'air' hovers over a larger dithered ellipse
     displaced down-right. Dither, never blurred alpha — a gaussian smudge
     is a grey stain at cut-in scale and breaks under nearest sampling.
-    'sea' sits in the water on a displacement shadow with waterline foam.
+    'sea' sits in the water on a displacement shadow with waterline foam;
+    `wake` adds the running foam a hull that is mostly under water needs to
+    separate from open sea at all (see `_wake`).
     'prop' composes with no shadow (terrain tiles draw their own grounding).
 
     Shadow density now encodes altitude (sprite fix spec, section 4): a land
@@ -492,6 +495,8 @@ def compose_cell(
         )
     place_in_cell(out, sprite, x0, y0)
     if kind == "sea":
+        if wake:
+            _wake(out, sprite, x0, y0)
         _waterline_foam(out)
     return out
 
@@ -514,6 +519,50 @@ def place_in_cell(cell_img: Image.Image, sprite: Image.Image, x0: int, y0: int) 
 
 
 FOAM_ROWS = 4
+FOAM: RGB = (226, 240, 250)
+# How far the wake runs on past the stern, in cell columns.
+WAKE_TRAIL = 6
+
+
+def _wake(img: Image.Image, sprite: Image.Image, x0: int, y0: int) -> None:
+    """Running foam along an awash hull's whole length, trailing off the stern.
+
+    A ship reads against open sea by its freeboard; a submarine has none, so
+    the round-4 legibility measure put the sub last on the sheet. The foam is
+    what the water does about the hull it is breaking over, so it follows the
+    hull's own underside — the bottom-most sprite pixel of every column —
+    rather than a fixed row, and then keeps going up-right past the stern
+    along the dimetric hull axis (2 columns per row).
+
+    Opaque dither, never partial alpha, and only into empty pixels: the
+    displacement shadow is laid on the same parity, so the wake shows exactly
+    where that shadow does not reach instead of stippling on top of it.
+    """
+    px = img.load()
+    sp = sprite.load()
+    w, h = img.size
+    sw, sh = sprite.size
+
+    def fleck(x: int, y: int) -> None:
+        if 0 <= x < w and 0 <= y < h and (x + y) % 2 == 0 and px[x, y][3] == 0:
+            px[x, y] = (*FOAM, 255)
+
+    keel = []
+    for sx in range(sw):
+        column = [sy for sy in range(sh) if sp[sx, sy][3] == 255]
+        if column:
+            keel.append((x0 + sx, y0 + max(column)))
+    if not keel:
+        return
+    for i, (x, y) in enumerate(keel):
+        fleck(x, y + 1)
+        if i % 2 == 0:
+            fleck(x, y + 2)
+    stern_x, stern_y = keel[-1]
+    for k in range(1, WAKE_TRAIL + 1):
+        y = stern_y - (k + 1) // 2
+        fleck(stern_x + k, y)
+        fleck(stern_x + k, y + 1)
 
 
 def _waterline_foam(img: Image.Image) -> None:
@@ -528,7 +577,7 @@ def _waterline_foam(img: Image.Image) -> None:
     """
     px = img.load()
     w, h = img.size
-    foam = (226, 240, 250)
+    foam = FOAM
     spans = []
     for yy in range(h):
         xs = [xx for xx in range(w) if px[xx, yy][3] == 255]

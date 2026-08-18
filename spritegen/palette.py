@@ -223,7 +223,12 @@ RAMPS: dict[str, Ramp] = {
     # steel, a value structure no chromatic faction has — but its ceiling is
     # pulled in (see IRON_TOP_SLOT) so it sits with them instead of above.
     # Its own token is at the value floor, so it is the shadow plane.
-    "iron": _hexramp("05070a", "1b2026", "2b3238", "79838d", "a8b2bc", "dfe6ec"),
+    # S4 sat at L176 while every chromatic S4 sits at L134-147, and the
+    # round-5 rim pass then lifted a rimmed shadow plane INTO that slot on
+    # every model — which is how Iron came back as the brightest row (17.3%
+    # of its pixels above L160 against 14.0-14.9%, round-6 review). It comes
+    # down to L151, under the band, and Iron's flash stays the S5 rim.
+    "iron": _hexramp("05070a", "1b2026", "2b3238", "79838d", "8f99a2", "dfe6ec"),
     # Warm khaki: neutral separates from Iron's cool steel by hue rather than
     # by value, so it stops competing with the exhausted state. The round-5
     # verdict measured that hue paid for at the top of the ramp — 27% of

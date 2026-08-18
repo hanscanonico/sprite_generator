@@ -61,12 +61,20 @@ corner, and it is the one place a ceiling gives way, Iron's included — that
 edge light is how every unit claims the L200+ band the terrain ceiling
 reserves for it. Two build gates hold the pair up, with no unit exempt from
 either: at least 3% of a unit's pixels above L200 on every row, and at least
-55% of a unit changing colour when the row does. Buildings are
+55% of a unit changing colour when the row does. A third gate holds the rows
+in **order** rather than at a number: no row's share of the band above L160
+may sit more than a percentage point over the widest chromatic row's. Freezing
+that as an absolute figure is what let Iron come back as the loudest row once
+the rim pass lifted everybody (17.3% against 14.0-14.9%, round 6) — the pixels
+moved, the pinned number did not. Buildings are
 neutral concrete and stone under faction-colored roofs, caps and banners, and
 still render through the older shading path (`render`), which terrain shares.
 Shadow density encodes altitude: land units get a quarter-tone contact
 shadow, air units a half-tone one offset down-right with ground showing
-between, ships a displacement shadow with waterline foam. Nothing a unit
+between, ships a displacement shadow with waterline foam. The sub carries a
+**wake** on top of that — running foam down its own underside and trailing off
+the stern — because a hull with no freeboard has nothing else to separate it
+from open sea. Nothing a unit
 emits is semi-transparent — every shadow and fleck is an opaque dither,
 because partial alpha is a blurred halo at cut-in scale.
 
