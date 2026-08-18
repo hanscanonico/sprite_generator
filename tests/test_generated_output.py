@@ -393,9 +393,24 @@ class WoodsSeam(unittest.TestCase):
         lums = [terrain.luminance(c) for c in self._plate(salt)]
         return min(lums), max(lums)
 
+    # every variant clears at least this much plate between its crowns; the
+    # thinnest today is 389px, so a plate that stopped being the plains one
+    # in either direction empties this rather than merely thinning it
+    CLEARING_FLOOR = 300
+
     def test_the_woods_plate_is_the_plains_plate(self):
         self.assertLessEqual(self._plate(WOODS_SALT), self._plate(PLAINS_SALT))
         self.assertEqual(self._band(WOODS_SALT), self._band(PLAINS_SALT))
+        # and the tile really shows that plate: a decoupled plate is caught
+        # from below here and from above by the ceiling test, whereas the two
+        # salts alone are a statement about the grain and not about the tile
+        ground = self._plate(PLAINS_SALT)
+        for mask in range(16):
+            with self.subTest(mask=mask):
+                shown = sum(
+                    1 for c in opaque_pixels(autotile.woods_tile(mask)) if c in ground
+                )
+                self.assertGreaterEqual(shown, self.CLEARING_FLOOR)
 
     def test_no_woods_pixel_out_keys_the_plains_ground(self):
         lo, hi = self._band(PLAINS_SALT)
