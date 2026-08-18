@@ -33,6 +33,23 @@ def _track(m: Model, x0: int, x1: int, y0: int, y1: int, z1: int = 1) -> None:
         m.set(x1, y, 0, "hub")
 
 
+def _rotor_collar(
+    m: Model, cx: int, cy: int, z: int, arms: tuple[tuple[int, int], ...]
+) -> None:
+    """Paint a rotor's hub cap and its four blade ROOTS in livery.
+
+    A helicopter's disc is the one large mass on the sheet that carries no
+    team colour, which is what left the two copters the only units under the
+    55% faction-share gate. The roots are where a real airframe's paint runs
+    out onto the blade, so the collar buys the share back without touching
+    the silhouette or lightening the sweep at the tips.
+    """
+    m.set(cx, cy, z, "hull_lt")
+    for dx, dy in arms:
+        m.set(cx + dx, cy + dy, z, "hull")
+        m.set(cx + dx * 2, cy + dy * 2, z, "hull_dk")
+
+
 def _tire(m: Model, x: int, y: int, big: bool = False) -> None:
     """One wheel: dark tire block with a hub dot on the outer face."""
     m.box(x, x + 1, y, y + 2, 0, 1, "tire")
@@ -529,10 +546,12 @@ def b_copter(frame: int = 0) -> Model:
     if frame == 0:
         m.box(4, 4, 5, 15, 9, 9, "rotor")
         m.box(-1, 9, 10, 10, 9, 9, "rotor")
+        _rotor_collar(m, 4, 10, 9, ((0, 1), (0, -1), (1, 0), (-1, 0)))
     else:
         for d in range(-4, 5):
             m.set(4 + d, 10 + d, 9, "rotor")
             m.set(4 + d, 10 - d, 9, "rotor")
+        _rotor_collar(m, 4, 10, 9, ((1, 1), (-1, -1), (1, -1), (-1, 1)))
     return m
 
 
@@ -569,6 +588,9 @@ def t_copter(frame: int = 0) -> Model:
         m.box(-1, 9, 4, 4, 9, 9, "rotor")
         m.box(5, 5, 9, 17, 9, 9, "rotor")
         m.box(0, 10, 13, 13, 9, 9, "rotor")
+        axes = ((0, 1), (0, -1), (1, 0), (-1, 0))
+        _rotor_collar(m, 4, 4, 9, axes)
+        _rotor_collar(m, 5, 13, 9, axes)
     else:
         # One diagonal blade pair per disc, opposed between the discs: two
         # full X sweeps overlap on the tandem hull and read as a different
@@ -576,6 +598,8 @@ def t_copter(frame: int = 0) -> Model:
         for d in range(-4, 5):
             m.set(4 + d, 4 + d, 9, "rotor")
             m.set(5 + d, 13 - d, 9, "rotor")
+        _rotor_collar(m, 4, 4, 9, ((1, 1), (-1, -1)))
+        _rotor_collar(m, 5, 13, 9, ((1, -1), (-1, 1)))
     return m
 
 

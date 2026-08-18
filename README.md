@@ -46,7 +46,14 @@ shadow plane and the identity comes from the near-black-to-light-steel jump
 no other faction has. Its ceiling is pulled in — lit planes stop at the body
 slot and only the rim steps above — because the previous pass overshot and
 made the dark faction the brightest thing on the board. Neutral goes warm
-khaki so it separates from Iron by hue rather than by value. Buildings are
+khaki so it separates from Iron by hue rather than by value, and its top
+plane sits below the bright band so the row nobody owns is never the loudest
+one. The **rim is a lit plane's leading edge**, not just the model's front
+corner, and it is the one place a ceiling gives way, Iron's included — that
+edge light is how every unit claims the L200+ band the terrain ceiling
+reserves for it. Two build gates hold the pair up, with no unit exempt from
+either: at least 3% of a unit's pixels above L200 on every row, and at least
+55% of a unit changing colour when the row does. Buildings are
 neutral concrete and stone under faction-colored roofs, caps and banners, and
 still render through the older shading path (`render`), which terrain shares.
 Shadow density encodes altitude: land units get a quarter-tone contact

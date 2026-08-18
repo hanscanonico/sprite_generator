@@ -267,6 +267,86 @@ class ValueCeiling(unittest.TestCase):
                 self.assertLess(max(terrain.luminance(c) for c in px), top_of_ramp)
 
 
+class UnitBandCoverage(unittest.TestCase):
+    """The other half of the value ceiling: units have to USE the band.
+
+    `ValueCeiling` above keeps the ground out of L200+; the round-5 verdict
+    measured that half the land group barely entered it (Meridian infantry
+    0.9%, apc 0.9%, artillery 1.3% of pixels above L200 against the spec's
+    3%), because the rim fired only on a model's single front corner. A band
+    reserved for units that units do not stand in is a band nothing keys off.
+
+    Measured over the unit's own pixels: the composed shadow and the foam are
+    identical on every row and belong to the cell, not the army — the same
+    exclusion `RowSeparation` and `tests/measure_livery.py` make.
+    """
+
+    BRIGHT_BAND = 200.0
+    MIN_RIM_SHARE = 0.03
+    # The spec's build gate, section 9. No unit is exempt: it was written
+    # against a bomber at 46% and a b_copter at 50%, and a gate that names
+    # its own violators is a note, not a gate.
+    MIN_FACTION_SHARE = 0.55
+    COMPOSED = {(16, 18, 24), (226, 240, 250)}  # shadow dither, waterline foam
+
+    def _unit_pixels(self, cell):
+        px = cell.convert("RGBA").load()
+        return [
+            (x, y, px[x, y][:3])
+            for y in range(cell.height)
+            for x in range(cell.width)
+            if px[x, y][3] == 255 and px[x, y][:3] not in self.COMPOSED
+        ]
+
+    def test_every_unit_stands_in_the_band_reserved_for_it(self):
+        for fac in FACTIONS:
+            for uid in ATLAS_ORDER:
+                px = self._unit_pixels(atlas.unit_cell(uid, fac))
+                lit = sum(
+                    1 for _, _, c in px if terrain.luminance(c) > self.BRIGHT_BAND
+                )
+                with self.subTest(faction=fac.key, unit=uid):
+                    self.assertGreaterEqual(lit / len(px), self.MIN_RIM_SHARE)
+
+    def test_every_unit_wears_its_team_on_most_of_itself(self):
+        for uid in ATLAS_ORDER:
+            for frame in (0, 1):
+                red = atlas.unit_cell(uid, faction_by_key("red"), frame)
+                blue = atlas.unit_cell(uid, faction_by_key("blue"), frame).convert(
+                    "RGBA"
+                )
+                other = blue.load()
+                px = self._unit_pixels(red)
+                worn = sum(1 for x, y, c in px if other[x, y][:3] != c)
+                with self.subTest(unit=uid, frame=frame):
+                    self.assertGreaterEqual(worn / len(px), self.MIN_FACTION_SHARE)
+
+    def test_the_unowned_row_is_never_the_loudest_one(self):
+        """Neutral was 27% of its pixels above L160 — 4,280 of them its S4 top
+        plane alone — against 7-8% for every faction, so the army nobody owns
+        was the loudest thing on the sheet by four times.
+
+        The bound is 'never the brightest row' rather than 'the dimmest row':
+        neutral is a mid-value khaki because what separates it from Iron is
+        HUE (`RowSeparation`, and the ramp's own comment), so a neutral
+        authored down to the dimmest mean walks straight into the collapsed
+        neutral/iron pair the 2026-08-13 review blocked on. What the top
+        plane may not do is sit in the bright band at all, which is the
+        4,280-pixel half of the finding and is pinned first.
+        """
+        self.assertLess(palette.luminance(RAMPS["neutral"][palette.S_TOP]), 160.0)
+        shares = {}
+        for fac in FACTIONS:
+            px = [
+                c
+                for uid in ATLAS_ORDER
+                for _, _, c in self._unit_pixels(atlas.unit_cell(uid, fac))
+            ]
+            shares[fac.key] = share_above(px, 160.0)
+        loudest = max(shares.values())
+        self.assertLess(shares["neutral"], loudest)
+
+
 class GroundSeparation(unittest.TestCase):
     """Road, bridge and shoal were three tans within 19L of each other, two of
     them sharing a dominant colour outright — which is no movement-cost signal
@@ -310,6 +390,65 @@ class GroundSeparation(unittest.TestCase):
         self.assertGreaterEqual(
             abs(terrain.luminance(plains) - terrain.luminance(grounds["road"])), 15.0
         )
+
+
+class TerrainPalette(unittest.TestCase):
+    """A tile may not spend colours the way the pre-indexed units did.
+
+    `IndexedPalette` holds units to 24 colours a sprite; nothing held the
+    ground to anything, and the round-5 verdict found woods carrying 71.
+    That is survivable at 64px and is exactly the drift that becomes visible
+    when the tiles go to 128px, so it gets a ceiling now, while every tile
+    passes it with headroom.
+    """
+
+    NATURE_CEILING = 80
+    # Property tiles compose a building drawn by the older shading renderer
+    # (`voxel.render`), which spends a colour per lit pixel — 209 on the
+    # aurora HQ today. That is the properties pass's to bring down, so it is
+    # recorded here as its own loose ceiling rather than left ungated: the
+    # number is debt, the gate is that it stops growing.
+    PROPERTY_CEILING = 220
+
+    def _colours(self, img) -> int:
+        return len(set(opaque_pixels(img)))
+
+    def test_nature_tiles_stay_under_the_colour_ceiling(self):
+        for tid in terrain.TERRAIN_ORDER:
+            if tid in terrain.PROPERTY:
+                continue
+            with self.subTest(tile=tid):
+                self.assertLessEqual(
+                    self._colours(terrain.tile(tid, FACTIONS[0])), self.NATURE_CEILING
+                )
+
+    def test_autotile_variants_stay_under_the_colour_ceiling(self):
+        builders = (
+            autotile.road_tile,
+            autotile.river_tile,
+            autotile.coast_tile,
+            autotile.shoal_tile,
+            autotile.woods_tile,
+        )
+        for builder in builders:
+            for mask in range(16):
+                with self.subTest(sheet=builder.__name__, mask=mask):
+                    self.assertLessEqual(
+                        self._colours(builder(mask)), self.NATURE_CEILING
+                    )
+        for ew in (True, False):
+            with self.subTest(sheet="bridge", ew=ew):
+                self.assertLessEqual(
+                    self._colours(autotile.bridge_tile(ew)), self.NATURE_CEILING
+                )
+
+    def test_property_tiles_hold_their_recorded_ceiling(self):
+        for tid in sorted(terrain.PROPERTY):
+            for fac in FACTIONS:
+                with self.subTest(tile=tid, faction=fac.key):
+                    self.assertLessEqual(
+                        self._colours(terrain.tile(tid, fac)), self.PROPERTY_CEILING
+                    )
 
 
 class AutotileMasks(unittest.TestCase):

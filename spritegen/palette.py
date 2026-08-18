@@ -225,8 +225,13 @@ RAMPS: dict[str, Ramp] = {
     # Its own token is at the value floor, so it is the shadow plane.
     "iron": _hexramp("05070a", "1b2026", "2b3238", "79838d", "a8b2bc", "dfe6ec"),
     # Warm khaki: neutral separates from Iron's cool steel by hue rather than
-    # by value, so it stops competing with the exhausted state.
-    "neutral": _hexramp("1a150f", "443b2c", "6f6350", "968a72", "beb49c", "e6dfcc"),
+    # by value, so it stops competing with the exhausted state. The round-5
+    # verdict measured that hue paid for at the top of the ramp — 27% of
+    # neutral pixels above L160, 4,280 of them the S4 top plane alone, which
+    # made the row nobody owns the brightest row on the board. S4 comes down
+    # to L156 and the hue is carried further into the sand instead, which is
+    # what keeps the row a wide margin off Iron with less light in it.
+    "neutral": _hexramp("1c1207", "4a3a22", "7a6440", "a4874f", "b89a5e", "ecdcab"),
 }
 
 # Shared by every faction. Five authored steps plus one interpolated mid,

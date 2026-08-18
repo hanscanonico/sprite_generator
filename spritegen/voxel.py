@@ -32,6 +32,7 @@ from .palette import (
     MID_GUNMETAL,
     RGB,
     S_CONTOUR,
+    S_RIM,
     S_TOP,
     SLOTS,
     Faction,
@@ -185,16 +186,18 @@ def render_indexed(
             top_steps += 1
         if (x + 1, y, z + 1) in vox or (x, y + 1, z + 1) in vox:
             top_steps += 1
-        # The rim is the model's front corner, not any unshadowed top: at a
-        # whole ramp step a rim on every little step and notch reads as
-        # speckle, where the old renderer's 13% lighten only whispered.
-        rim = (
-            top_steps == 0
-            and (x, y, z + 1) not in vox
-            and (x + 1, y, z) not in vox
-            and (x, y + 1, z) not in vox
-            and (x + 1, y + 1, z) not in vox
-        )
+        # The rim is a lit plane's LEADING EDGE — the last voxel before the
+        # top surface falls away toward the camera, on either camera-facing
+        # side. The front corner alone (both sides open) is one voxel per
+        # mass, which is why half the land group carried under 3% of its
+        # pixels in the bright band the terrain ceiling reserves for units
+        # (round-5 verdict): a low flat-topped hull has exactly one corner
+        # and a tall one has none to spare. An edge is still an edge — an
+        # interior top voxel is never rim, so this cannot bloom into
+        # brightening the whole plane, and `_despeckle` folds away the lone
+        # pixels a notch leaves.
+        top_lit = top_steps == 0 and (x, y, z + 1) not in vox
+        rim = top_lit and ((x + 1, y, z) not in vox or (x, y + 1, z) not in vox)
         under = 1 if z == zmin else 0
         left_steps = under + (1 if (x, y + 1, z + 1) in vox else 0)
         right_steps = under + (1 if (x + 1, y, z + 1) in vox else 0)
@@ -205,10 +208,14 @@ def render_indexed(
             "right": -1 - right_steps,
         }
         for face, pixels in _face_pixels(sx, sy).items():
-            # The rim is the one place a ceiling gives way: it is a one-pixel
-            # edge, and it is where Iron's light-steel flash lives.
+            # The rim is the one place a ceiling gives way, and it gives way
+            # to the top of the ramp: it is an edge one voxel deep, and it is
+            # where Iron's light-steel flash lives. Lifting Iron only to its
+            # capped top plane's next step left the darkest faction with no
+            # pixel at all in the band above L200 that the terrain ceiling
+            # reserves for units.
             lifts_rim = rim and face == "top" and spec.mid == MID_FACTION
-            ceiling = cap + 1 if lifts_rim else cap
+            ceiling = S_RIM if lifts_rim else cap
             slot = min(ceiling, max(floor, spec.slot + offsets[face]))
             slot = max(0, min(SLOTS - 1, slot))
             c = ramp[slot]
