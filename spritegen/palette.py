@@ -86,27 +86,6 @@ DITHERED = {
 # Materials rendered glossy: hot specular top, brighter left face.
 GLOSSY = {"glass", "glass_dk"}
 
-# The hull ramp: faction hue pulled toward a neutral chassis grey, so armour
-# reads as military hardware wearing team livery rather than a toy dipped in
-# paint. Models keep pure `body` for the identity accents (turret tops, wings,
-# cabs, decks) that must still shout the owner at map scale. The pull is 20%:
-# at the original 50% a red hull averaged down to brick over terrain and the
-# faction read died at board zoom (sprite review, 2026-08-13) — 20% keeps the
-# livery-vs-accent split while the hull still carries the flag.
-_CHASSIS: RGB = (112, 115, 106)
-_CHASSIS_DK: RGB = (80, 83, 76)
-_CHASSIS_LT: RGB = (146, 150, 139)
-_HULL_PULL = 0.20
-
-# Iron's scheme is inverted: its theme hue sits a step off the chassis grey,
-# so a tinted hull makes an iron army indistinguishable from the neutral row
-# and from any faction's acted grey-out — three meanings, one appearance.
-# Iron therefore fields light-steel hulls and keeps its dark slate on the
-# identity accents: the dark-faction read comes from value structure, not hue.
-_IRON_HULL: RGB = (178, 184, 192)
-_IRON_HULL_DK: RGB = (142, 149, 158)
-_IRON_HULL_LT: RGB = (206, 212, 219)
-
 # Cyan glass is Aurora's alone (sprite review round 3): an untinted cyan
 # canopy on every row was the largest accent on some sprites and competed
 # with the faction read — a verdant copter was a green-and-blue unit. Every
@@ -116,7 +95,12 @@ _CANOPY_DK: RGB = (174, 170, 158)
 
 
 def resolve(material: str, faction: Faction) -> RGB:
-    """A model's material name -> concrete RGB for one faction row."""
+    """A model's material name -> concrete RGB for one faction row.
+
+    Terrain and buildings paint with this directly. Units go through the
+    indexed ramps at the bottom of this file, so a unit material resolves
+    only when it is a fixed accent whose ramp is derived from its colour.
+    """
     if material == "body":
         return faction.body
     if material == "body_dk":
@@ -127,29 +111,15 @@ def resolve(material: str, faction: Faction) -> RGB:
         return MATERIALS["glass"] if faction.key == "aurora" else _CANOPY
     if material == "glass_dk":
         return MATERIALS["glass_dk"] if faction.key == "aurora" else _CANOPY_DK
-    if material == "hull":
-        return (
-            _IRON_HULL
-            if faction.key == "iron"
-            else mix(faction.body, _CHASSIS, _HULL_PULL)
-        )
-    if material == "hull_dk":
-        return (
-            _IRON_HULL_DK
-            if faction.key == "iron"
-            else mix(faction.body_dk, _CHASSIS_DK, _HULL_PULL)
-        )
-    if material == "hull_lt":
-        return (
-            _IRON_HULL_LT
-            if faction.key == "iron"
-            else mix(faction.body_lt, _CHASSIS_LT, _HULL_PULL)
-        )
     return MATERIALS[material]
 
 
 def clamp8(v: float) -> int:
     return max(0, min(255, round(v)))
+
+
+def luminance(c: RGB) -> float:
+    return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
 
 
 def mix(a: RGB, b: RGB, t: float) -> RGB:
@@ -208,3 +178,155 @@ def faction_by_key(key: str) -> Faction:
         if f.key == key or f.team == key:
             return f
     raise KeyError(key)
+
+
+# ---------------------------------------------------------------------------
+# indexed ramps — the unit palette
+# ---------------------------------------------------------------------------
+#
+# Units are painted out of fixed six-step ramps instead of out of shading
+# arithmetic (sprite fix spec round 4, sections 2-3). A slot is a lighting
+# BAND, not a brightness: S0 contour, S1 under, S2 shadow, S3 body, S4 top,
+# S5 rim. `shade` above computes a colour per pixel and so spends a thousand
+# palette entries per atlas row on one physical surface; a slot index spends
+# one, which is what makes the tint a swap rather than a blend.
+#
+# S3 is the design-system token itself, so a faction reads at its brand
+# luminance rather than at half of it.
+
+SLOTS = 6
+S_CONTOUR, S_UNDER, S_SHADOW, S_BODY, S_TOP, S_RIM = range(SLOTS)
+
+Ramp = tuple[RGB, ...]
+
+# Per-pixel material ids emitted beside the colour. Tinting is a lookup on
+# FACTION alone; every other id is faction-independent by construction. The
+# spec's fifth id, shadow, has no entry here because a shadow is composed
+# under the sprite at cell level and never lands in a sprite's map.
+MID_CONTOUR = 0
+MID_FACTION = 1
+MID_GUNMETAL = 2
+MID_ACCENT = 3
+MID_EMPTY = 255
+
+
+def _hexramp(*hexes: str) -> Ramp:
+    return tuple((int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)) for h in hexes)
+
+
+# The authored faction ramps: S3 is the game's own FactionTheme colour.
+RAMPS: dict[str, Ramp] = {
+    "meridian": _hexramp("2b0f0e", "6b2320", "a4362c", "d84a3c", "f2705a", "ffc0ab"),
+    "aurora": _hexramp("0e1330", "1f3070", "2d47a4", "3c64d8", "6188f2", "bacdff"),
+    "verdant": _hexramp("0d2113", "174d24", "22682c", "2c8636", "51b45c", "b6ecbc"),
+    # Iron keeps its inverted identity — near-black panels jumping to light
+    # steel, a value structure no chromatic faction has — but its ceiling is
+    # pulled in (see IRON_TOP_SLOT) so it sits with them instead of above.
+    # Its own token is at the value floor, so it is the shadow plane.
+    "iron": _hexramp("05070a", "1b2026", "2b3238", "79838d", "a8b2bc", "dfe6ec"),
+    # Warm khaki: neutral separates from Iron's cool steel by hue rather than
+    # by value, so it stops competing with the exhausted state.
+    "neutral": _hexramp("1a150f", "443b2c", "6f6350", "968a72", "beb49c", "e6dfcc"),
+}
+
+# Shared by every faction. Five authored steps plus one interpolated mid,
+# because the spec draws the gunmetal strip without a rim slot. Its body slot
+# sits at L132 so an identifying feature — a barrel, a mount, a rotor mast —
+# reads on a dark hull instead of only on Iron's light one.
+GUNMETAL_RAMP: Ramp = _hexramp(
+    "14161a", "3a4048", "5a626d", "7a848f", "a7b1bb", "d2dae1"
+)
+
+# Iron's ceiling. Shipped Iron put 27-51% of its pixels above L160 and used
+# pure white, so it stopped being dark and started out-reading all three
+# chromatic factions. Its top plane therefore stops at the body slot and only
+# the rim steps above it: the near-black-to-light-steel jump survives — it is
+# what Iron IS — while the bright band above L160 stays the chromatic
+# factions' to own.
+IRON_SLOT_CEILING = S_BODY
+
+
+@dataclass(frozen=True)
+class MaterialSlot:
+    """Where a model's material name sits in the indexed palette."""
+
+    ramp: str  # "faction", "gunmetal", or "" = derived from resolve()
+    slot: int
+    mid: int
+
+
+_FACTION_SLOT = "faction"
+_GUNMETAL_SLOT = "gunmetal"
+
+
+def _fac(slot: int) -> MaterialSlot:
+    return MaterialSlot(_FACTION_SLOT, slot, MID_FACTION)
+
+
+def _gun(slot: int) -> MaterialSlot:
+    return MaterialSlot(_GUNMETAL_SLOT, slot, MID_GUNMETAL)
+
+
+def _accent(slot: int) -> MaterialSlot:
+    return MaterialSlot("", slot, MID_ACCENT)
+
+
+# The livery convention, restated as slots: the chassis mass wears the body
+# slot, the identity accents the two above it. `hull` is no longer a blend
+# toward chassis grey — the ramp already carries the value structure the
+# blend was faking, and the blend is what halved the brand luminance.
+UNIT_MATERIALS: dict[str, MaterialSlot] = {
+    "hull": _fac(S_BODY),
+    "hull_dk": _fac(S_SHADOW),
+    "hull_lt": _fac(S_TOP),
+    "body": _fac(S_TOP),
+    "body_dk": _fac(S_BODY),
+    "body_lt": _fac(S_RIM),
+    "gunmetal": _gun(S_BODY),
+    "gunmetal_dk": _gun(S_SHADOW),
+    "steel": _gun(S_TOP),
+    "hub": _gun(S_BODY),
+    "deck": _gun(S_BODY),
+    "deck_dk": _gun(S_SHADOW),
+    "track": _gun(S_UNDER),
+    "track_lt": _gun(S_SHADOW),
+    "tire": _gun(S_UNDER),
+    "rotor": _gun(S_UNDER),
+    "bore": _gun(S_CONTOUR),
+}
+
+
+def material_slot(material: str) -> MaterialSlot:
+    """Slot for a model's material name; anything unlisted is a fixed accent."""
+    return UNIT_MATERIALS.get(material, _accent(S_BODY))
+
+
+def _derived_ramp(base: RGB) -> Ramp:
+    """A six-step ramp around a fixed accent colour, shaped like the authored
+    faction ones: S0 at ~12% luminance, S3 the colour itself, S5 a pale rim."""
+    return (
+        darken(base, 0.82),
+        darken(base, 0.55),
+        darken(base, 0.28),
+        base,
+        mix(tuple(clamp8(v * 1.22) for v in base), (255, 255, 255), 0.10),
+        lighten(base, 0.62),
+    )
+
+
+_DERIVED: dict[RGB, Ramp] = {}
+
+
+def ramp_for(material: str, faction: Faction) -> Ramp:
+    """The ramp a material is painted out of, for one faction row."""
+    spec = material_slot(material)
+    if spec.ramp == _FACTION_SLOT:
+        return RAMPS[faction.key]
+    if spec.ramp == _GUNMETAL_SLOT:
+        return GUNMETAL_RAMP
+    base = resolve(material, faction)
+    ramp = _DERIVED.get(base)
+    if ramp is None:
+        ramp = _derived_ramp(base)
+        _DERIVED[base] = ramp
+    return ramp

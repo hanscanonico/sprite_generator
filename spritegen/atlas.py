@@ -21,7 +21,7 @@ from PIL import Image
 from . import autotile, buildings, terrain
 from .palette import FACTIONS, Faction
 from .units import ATLAS_ORDER, UNITS, build_model
-from .voxel import compose_cell, place_in_cell, render
+from .voxel import compose_cell, place_in_cell, render, render_indexed
 
 CELL = 64
 # Ambient animation frame B: air and sea units ride one voxel-scale pixel
@@ -32,9 +32,12 @@ _BOB_BOTTOM = {"air": 43, "sea": 54}
 
 
 def unit_cell(uid: str, fac: Faction, frame: int = 0) -> Image.Image:
+    """One atlas cell. Units render through the indexed ramps; terrain and
+    buildings keep the shading renderer until their own pass moves them."""
     kind = UNITS[uid][1]
     bottom = _BOB_BOTTOM.get(kind) if frame == 1 else None
-    return compose_cell(render(build_model(uid, frame), fac), kind, bottom=bottom)
+    sprite = render_indexed(build_model(uid, frame), fac).image
+    return compose_cell(sprite, kind, bottom=bottom)
 
 
 def build_units_atlas(frame: int = 0) -> Image.Image:

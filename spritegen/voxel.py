@@ -6,26 +6,43 @@ sprite overlapping its neighbours by 2px, which is what produces the classic
 2px-run stair edges. +x runs toward screen lower-right, +y toward screen
 lower-left (units face +y), +z is up.
 
-On top of the flat three-tone faces the pack used, the renderer adds baked
-ambient occlusion, front-edge rim light, a whisper of dither on broad tops,
-and a per-part outline (each silhouette pixel outlines in a dark tint of the
-part it borders, so red armour gets a red-black edge and gun steel a
-grey-black one). All of it is deterministic: no RNG anywhere.
+Two renderers share that geometry. `render_indexed` draws units: one flat
+ramp slot per visible plane, ambient occlusion and the ground contact
+charged as whole slot steps, a per-faction contour, and a material id
+emitted beside every pixel. `render` is the older shading path — three
+computed face tones, fractional occlusion, dither on broad tops and a
+per-part outline — and terrain and buildings still draw with it. All of it
+is deterministic: no RNG anywhere.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from PIL import Image
 
 from .palette import (
     DITHERED,
     GLOSSY,
+    IRON_SLOT_CEILING,
+    MID_ACCENT,
+    MID_CONTOUR,
+    MID_EMPTY,
+    MID_FACTION,
+    MID_GUNMETAL,
     RGB,
+    S_CONTOUR,
+    S_TOP,
+    SLOTS,
     Faction,
+    Ramp,
     darken,
     h01,
     lighten,
+    luminance,
+    material_slot,
     mix,
+    ramp_for,
     resolve,
     shade,
 )
@@ -88,19 +105,244 @@ def _face_pixels(sx: int, sy: int) -> dict[str, list[tuple[int, int]]]:
     }
 
 
-def render(model: Model, faction: Faction, outline: bool = True) -> Image.Image:
-    """Render to a tightly-cropped RGBA image (1px border reserved for outline)."""
-    if not model.vox:
-        return Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+Anchors = dict[tuple[int, int, int], tuple[int, int]]
 
-    anchors = {}
+
+def _bounds(model: Model) -> tuple[Anchors, int, int, int, int]:
+    """Screen anchors per voxel plus the crop the sprite needs (2px margin for
+    the doubled terrain-facing contour)."""
+    anchors: Anchors = {}
     for x, y, z in model.vox:
         anchors[(x, y, z)] = ((x - y) * 2, (x + y) - z * 2)
     minx = min(a[0] for a in anchors.values()) - 1
     miny = min(a[1] for a in anchors.values()) - 1
     w = max(a[0] for a in anchors.values()) + 4 + 2 - minx
     h = max(a[1] for a in anchors.values()) + 4 + 2 - miny
+    return anchors, minx, miny, w, h
 
+
+@dataclass
+class IndexedSprite:
+    """A rendered sprite plus the material id behind every pixel.
+
+    The id is what makes a tint a lookup rather than a colour match: material
+    1 is the faction's, and nothing else on the sprite moves when a row does.
+    """
+
+    image: Image.Image
+    materials: bytearray
+
+    def mid(self, x: int, y: int) -> int:
+        return self.materials[y * self.image.width + x]
+
+
+def render_indexed(
+    model: Model, faction: Faction, outline: bool = True
+) -> IndexedSprite:
+    """Render a unit out of the indexed ramps: one flat slot per visible plane.
+
+    The old path shades every pixel by arithmetic, so one physical face lands
+    on dozens of near-identical colours and no post-hoc quantiser can recover
+    the plane structure that was never there. Here a face normal picks a SLOT
+    — top, rim, body, shadow, under — and the ramp picks the colour, so a
+    sprite costs tens of palette entries and a faction is a ramp swap.
+    """
+    if not model.vox:
+        return IndexedSprite(Image.new("RGBA", (1, 1), (0, 0, 0, 0)), bytearray([255]))
+
+    anchors, minx, miny, w, h = _bounds(model)
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    px = img.load()
+    mids = bytearray([MID_EMPTY]) * (w * h)
+    ramps: list[Ramp | None] = [None] * (w * h)
+
+    vox = model.vox
+    zmin = min(v[2] for v in vox)
+    # A lit plane stops at the top slot and the rim alone steps above it, so
+    # a light livery material cannot carpet a deck in near-white — the
+    # blotching the spec's own post-hoc quantiser produced. Iron stops one
+    # lower still: see IRON_SLOT_CEILING.
+    faction_cap = IRON_SLOT_CEILING if faction.key == "iron" else S_TOP
+    for x, y, z in sorted(vox, key=lambda v: (v[0] + v[1], v[2])):
+        mat = vox[(x, y, z)]
+        spec = material_slot(mat)
+        ramp = ramp_for(mat, faction)
+        cap = faction_cap if spec.mid == MID_FACTION else SLOTS - 1
+        # A fixed accent is a small part — a lamp, a canopy, a nose cone —
+        # and five bands on twenty pixels is palette spent on nothing, so an
+        # accent gets shadow / body / top and no rim or under.
+        floor = spec.slot - 1 if spec.mid == MID_ACCENT else 0
+        cap = min(cap, spec.slot + 1) if spec.mid == MID_ACCENT else cap
+        sx, sy = anchors[(x, y, z)]
+        sx -= minx
+        sy -= miny
+
+        # Ambient occlusion and the ground contact are whole slot steps: a
+        # fractional darkening is exactly the per-pixel drift this rewrite
+        # exists to delete.
+        top_steps = 0
+        if (x - 1, y, z + 1) in vox or (x, y - 1, z + 1) in vox:
+            top_steps += 1
+        if (x + 1, y, z + 1) in vox or (x, y + 1, z + 1) in vox:
+            top_steps += 1
+        # The rim is the model's front corner, not any unshadowed top: at a
+        # whole ramp step a rim on every little step and notch reads as
+        # speckle, where the old renderer's 13% lighten only whispered.
+        rim = (
+            top_steps == 0
+            and (x, y, z + 1) not in vox
+            and (x + 1, y, z) not in vox
+            and (x, y + 1, z) not in vox
+            and (x + 1, y + 1, z) not in vox
+        )
+        under = 1 if z == zmin else 0
+        left_steps = under + (1 if (x, y + 1, z + 1) in vox else 0)
+        right_steps = under + (1 if (x + 1, y, z + 1) in vox else 0)
+
+        offsets = {
+            "top": 1 + (1 if rim else 0) - top_steps,
+            "left": -left_steps,
+            "right": -1 - right_steps,
+        }
+        for face, pixels in _face_pixels(sx, sy).items():
+            # The rim is the one place a ceiling gives way: it is a one-pixel
+            # edge, and it is where Iron's light-steel flash lives.
+            lifts_rim = rim and face == "top" and spec.mid == MID_FACTION
+            ceiling = cap + 1 if lifts_rim else cap
+            slot = min(ceiling, max(floor, spec.slot + offsets[face]))
+            slot = max(0, min(SLOTS - 1, slot))
+            c = ramp[slot]
+            for ix, iy in pixels:
+                px[ix, iy] = (c[0], c[1], c[2], 255)
+                idx = iy * w + ix
+                mids[idx] = spec.mid
+                ramps[idx] = ramp
+
+    if outline:
+        _contour(img, mids, ramps)
+    _despeckle(img, mids)
+    return IndexedSprite(img, mids)
+
+
+def _despeckle(img: Image.Image, mids: bytearray) -> None:
+    """Fold every lone pixel into the plane it is most like.
+
+    A pixel sharing its colour with none of its four orthogonal neighbours
+    is dirt at cut-in scale and shimmer at zoom-out (sprite fix spec, section
+    2, rule 3). Stair corners and the contour's own diagonals leave a
+    handful per sprite, so they are snapped to the neighbouring colour
+    closest in value — the plane they were nearly part of already.
+
+    In place and in scan order, not from a snapshot: a snapshot updates two
+    lone neighbours at once and can strand each on the colour the other just
+    left, so it needs a second pass to settle. Snapping against the live
+    image settles in one, because a pixel that was snapped to a neighbour
+    has given that neighbour a match and neither can move again.
+    """
+    px = img.load()
+    w, h = img.size
+    for y in range(h):
+        for x in range(w):
+            here = px[x, y]
+            if here[3] != 255:
+                continue
+            neigh = []
+            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if 0 <= nx < w and 0 <= ny < h:
+                    c = px[nx, ny]
+                    if c[3] == 255:
+                        neigh.append((c, ny * w + nx))
+            if not neigh or any(c[:3] == here[:3] for c, _ in neigh):
+                continue
+            level = luminance(here[:3])
+            best, src = min(neigh, key=lambda n: abs(luminance(n[0][:3]) - level))
+            px[x, y] = best
+            mids[y * w + x] = mids[src]
+
+
+def _contour(img: Image.Image, mids: bytearray, ramps: list[Ramp | None]) -> None:
+    """Per-faction S0 contour, doubled on the terrain-facing edges.
+
+    Every silhouette pixel takes the S0 of the ramp it borders — never a
+    shared black, which reads as a sticker edge — and the lower-right edges,
+    the ones that have to separate the unit from the ground it stands on,
+    carry a second pixel.
+    """
+    px = img.load()
+    w, h = img.size
+    opaque = [px[x, y][3] == 255 for y in range(h) for x in range(w)]
+
+    def solid(x: int, y: int) -> bool:
+        return 0 <= x < w and 0 <= y < h and opaque[y * w + x]
+
+    edges: list[tuple[int, int, Ramp]] = []
+    for yy in range(h):
+        for xx in range(w):
+            if opaque[yy * w + xx]:
+                continue
+            source = None
+            heavy: list[tuple[int, int]] = []
+            for nx, ny in ((xx, yy - 1), (xx - 1, yy), (xx + 1, yy), (xx, yy + 1)):
+                if not solid(nx, ny):
+                    continue
+                if source is None:
+                    source = ramps[ny * w + nx]
+                if ny < yy:  # body above: this is a bottom edge
+                    heavy.append((xx, yy + 1))
+                elif nx < xx:  # body to the left: a right edge
+                    heavy.append((xx + 1, yy))
+            if source is None:
+                continue
+            edges.append((xx, yy, source))
+            for ex, ey in heavy:  # terrain-facing: double the weight
+                if 0 <= ex < w and 0 <= ey < h and not solid(ex, ey):
+                    edges.append((ex, ey, source))
+
+    interior = _interior_contour(px, mids, ramps, w, h, opaque)
+    for xx, yy, ramp in edges + interior:
+        c = ramp[S_CONTOUR]
+        px[xx, yy] = (c[0], c[1], c[2], 255)
+        idx = yy * w + xx
+        mids[idx] = MID_CONTOUR
+        ramps[idx] = ramp
+
+
+_INTERIOR_STEP = 36.0  # under ~2 ramp slots of value
+
+
+def _interior_contour(
+    px, mids: bytearray, ramps: list[Ramp | None], w: int, h: int, opaque: list[bool]
+) -> list[tuple[int, int, Ramp]]:
+    """S0 between two materials whose value step is too small to read.
+
+    The hull gives up the pixel, never the feature: a gunmetal barrel on a
+    light Iron hull gets its contour out of the hull's own ramp, so the thing
+    that identifies the unit keeps every pixel it was drawn with.
+    """
+    out: list[tuple[int, int, Ramp]] = []
+    for yy in range(h):
+        for xx in range(w):
+            i = yy * w + xx
+            if not opaque[i] or mids[i] != MID_FACTION:
+                continue
+            here = luminance(px[xx, yy][:3])
+            for nx, ny in ((xx + 1, yy), (xx, yy + 1), (xx - 1, yy), (xx, yy - 1)):
+                if not (0 <= nx < w and 0 <= ny < h and opaque[ny * w + nx]):
+                    continue
+                if mids[ny * w + nx] != MID_GUNMETAL:
+                    continue
+                if abs(here - luminance(px[nx, ny][:3])) < _INTERIOR_STEP:
+                    out.append((xx, yy, ramps[i]))
+                    break
+    return out
+
+
+def render(model: Model, faction: Faction, outline: bool = True) -> Image.Image:
+    """Render to a tightly-cropped RGBA image (1px border reserved for outline)."""
+    if not model.vox:
+        return Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+
+    anchors, minx, miny, w, h = _bounds(model)
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     px = img.load()
     vox = model.vox
@@ -212,6 +454,12 @@ def compose_cell(
     is a grey stain at cut-in scale and breaks under nearest sampling.
     'sea' sits in the water on a displacement shadow with waterline foam.
     'prop' composes with no shadow (terrain tiles draw their own grounding).
+
+    Shadow density now encodes altitude (sprite fix spec, section 4): a land
+    unit's contact shadow is a quarter-tone hugging the hull, an airborne
+    one a half-tone offset down-right with ground showing between. Nothing
+    here is semi-transparent — every shadow and every fleck of foam is an
+    opaque dither, because partial alpha is a blurred halo at cut-in scale.
     """
     out = Image.new("RGBA", (cell, cell), (0, 0, 0, 0))
     w, h = sprite.size
@@ -226,13 +474,15 @@ def compose_cell(
         # Ships sit IN the water: a flat displacement shading right under the
         # hull instead of a floating blob, then foam hugging the waterline.
         rx = max(6, int(w * 0.42))
-        _shadow_ellipse(out, cell // 2 + dx, bottom - 1, rx, max(2, rx // 5), 52)
+        _dither_ellipse(out, cell // 2 + dx, bottom - 1, rx, max(2, rx // 5))
     elif kind == "air":
         rx = max(6, int(w * 0.30))
         _dither_ellipse(out, cell // 2 + dx + 4, 58, rx, max(2, rx // 3))
     elif kind == "land":
         rx = max(4, int(w * 0.34))
-        _dither_ellipse(out, cell // 2 + dx, bottom - 1, rx, max(2, rx // 4))
+        _dither_ellipse(
+            out, cell // 2 + dx, bottom - 1, rx, max(2, rx // 4), quarter=True
+        )
     place_in_cell(out, sprite, x0, y0)
     if kind == "sea":
         _waterline_foam(out)
@@ -279,21 +529,28 @@ def _waterline_foam(img: Image.Image) -> None:
             spans.append((yy, min(xs), max(xs)))
     if not spans:
         return
+    # The outer fleck used to fade on alpha; it now thins out as a dither
+    # instead, because a semi-transparent pixel is a halo at cut-in scale.
     for i, (yy, lo, hi) in enumerate(reversed(spans[-FOAM_ROWS:])):
         n = 2 if i < 2 else 1
         for k in range(1, n + 1):
+            if k > 1 and yy % 2:
+                continue
             if lo - k >= 0:
-                px[lo - k, yy] = (*foam, 235 - 60 * k)
+                px[lo - k, yy] = (*foam, 255)
             if hi + k < w:
-                px[hi + k, yy] = (*foam, 235 - 60 * k)
+                px[hi + k, yy] = (*foam, 255)
 
 
-def _dither_ellipse(img: Image.Image, cx: int, cy: int, rx: int, ry: int) -> None:
-    """A hard 50% checkerboard shadow: opaque dark pixels, no partial alpha.
+def _dither_ellipse(
+    img: Image.Image, cx: int, cy: int, rx: int, ry: int, quarter: bool = False
+) -> None:
+    """A hard checkerboard shadow: opaque dark pixels, no partial alpha.
 
     Reads as half-tone from the board and stays crisp at cut-in scale, where
-    a blurred alpha ellipse becomes a grey stain; alternate pixels let the
+    a blurred alpha ellipse becomes a grey stain; the empty pixels let the
     terrain underneath show through, so the shadow tints without smearing.
+    `quarter` is the lighter grid a land unit's contact shadow uses.
     """
     px = img.load()
     w, h = img.size
@@ -301,45 +558,9 @@ def _dither_ellipse(img: Image.Image, cx: int, cy: int, rx: int, ry: int) -> Non
         for xx in range(cx - rx, cx + rx + 1):
             if not (0 <= xx < w and 0 <= yy < h):
                 continue
-            if (xx + yy) % 2:
+            if (xx + yy) % 2 or (quarter and xx % 2):
                 continue
             if ((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2 > 1.0:
                 continue
             if px[xx, yy][3] == 0:
                 px[xx, yy] = (16, 18, 24, 255)
-
-
-def _shadow_ellipse(
-    img: Image.Image, cx: int, cy: int, rx: int, ry: int, alpha: int
-) -> None:
-    """Blend a soft dark ellipse over whatever is already in the image.
-
-    Source-over, not a stamp: on the transparent unit cells this reduces to
-    writing the shadow straight in, while on an opaque terrain tile the
-    tree/prop shadow tints the ground instead of punching a near-black slab
-    into it (the tile is later flattened to RGB, so the alpha would be lost).
-    """
-    px = img.load()
-    w, h = img.size
-    for yy in range(cy - ry, cy + ry + 1):
-        for xx in range(cx - rx, cx + rx + 1):
-            if not (0 <= xx < w and 0 <= yy < h):
-                continue
-            d = ((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2
-            if d > 1.0:
-                continue
-            a = alpha if d < 0.55 else int(alpha * 0.5)
-            dr, dg, db, da = px[xx, yy]
-            if da == 0:
-                px[xx, yy] = (16, 18, 24, a)
-                continue
-            keep = da * (255 - a) // 255
-            out_a = a + keep
-            if out_a == 0:
-                continue
-            px[xx, yy] = (
-                (16 * a + dr * keep) // out_a,
-                (18 * a + dg * keep) // out_a,
-                (24 * a + db * keep) // out_a,
-                out_a,
-            )

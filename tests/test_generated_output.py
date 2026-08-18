@@ -2,8 +2,13 @@
 
 Everything here renders sprites and asserts properties of the resulting
 pixels: the atlas sizes the game reads, byte-for-byte determinism, the
-livery convention (desaturated chassis, pure-faction identity surfaces,
-neutral buildings under faction roofs) and the autotile connection masks.
+indexed unit palette (ramp membership, the colour ceiling, no isolated
+pixel, no partial alpha), the terrain value band the units sit above,
+neutral buildings under faction roofs, and the autotile connection masks.
+
+Two `luminance` scales meet here and are qualified by module on purpose:
+`terrain.luminance` is Rec. 709, the scale the terrain ceilings are stated
+on, and `palette.luminance` is Rec. 601, the scale the ramps are built on.
 
 Run with `.venv/bin/python -m unittest discover tests`.
 """
@@ -16,9 +21,15 @@ from collections import Counter
 
 from PIL import Image
 
-from spritegen import atlas, autotile, terrain
+from spritegen import atlas, autotile, palette, terrain
 from spritegen.autotile import E, N, S, W
-from spritegen.palette import FACTIONS, faction_by_key, resolve
+from spritegen.palette import (
+    FACTIONS,
+    MID_FACTION,
+    RAMPS,
+    S_BODY,
+    faction_by_key,
+)
 from spritegen.terrain import (
     BUILDING_KEY_CEILING,
     CELL,
@@ -29,9 +40,9 @@ from spritegen.terrain import (
     TIMBER,
     WATER,
     WATER_DARK,
-    luminance,
 )
-from spritegen.units import ATLAS_ORDER
+from spritegen.units import ATLAS_ORDER, build_model
+from spritegen.voxel import render_indexed
 
 ROAD_TONES = {ROAD, ROAD_DARK}
 WATER_TONES = {WATER, WATER_DARK}
@@ -63,7 +74,7 @@ def opaque_pixels(img) -> list[tuple[int, int, int]]:
 
 def share_above(pixels, level: float) -> float:
     """Fraction of `pixels` brighter than `level` — the ramp band measure."""
-    return sum(1 for c in pixels if luminance(c) > level) / len(pixels)
+    return sum(1 for c in pixels if terrain.luminance(c) > level) / len(pixels)
 
 
 def dominant(pixels) -> tuple[int, int, int]:
@@ -140,29 +151,47 @@ class Determinism(unittest.TestCase):
 
 
 class Livery(unittest.TestCase):
-    """Team color as livery, not a paint dip."""
+    """Team colour as a palette slot, not a paint dip.
 
-    def test_hull_ramp_sits_between_faction_and_chassis_grey(self):
-        for fac in FACTIONS:
-            with self.subTest(faction=fac.key):
-                hull = resolve("hull", fac)
-                self.assertNotEqual(hull, fac.body)
-                self.assertLessEqual(saturation(hull), saturation(fac.body))
+    The livery used to be a blend — the faction hue pulled toward a chassis
+    grey — which is what left every faction body at half its token's
+    luminance (sprite fix spec round 4, section 3). It is a ramp slot now,
+    and S3 IS the token, so these pin membership rather than a blend ratio.
+    """
 
-    def test_vehicles_keep_a_desaturated_chassis_and_pure_accents(self):
-        red, blue = faction_by_key("red"), faction_by_key("blue")
-        pure = saturation(red.body)
+    def test_team_pixels_come_out_of_the_factions_own_ramp(self):
+        red = faction_by_key("red")
+        ramp = set(RAMPS[red.key])
         for uid in ("tank", "md_tank", "apc", "fighter", "battleship"):
             with self.subTest(unit=uid):
-                px = faction_pixels(
-                    atlas.unit_cell(uid, red), atlas.unit_cell(uid, blue)
-                )
-                self.assertGreater(len(px), 100)
-                sats = [saturation(c) for c in px]
-                # the bulk of the team-colored area is livery, not body color
-                self.assertLess(statistics.median(sats), pure * 0.85)
-                # identity surfaces still wear the pure faction color
-                self.assertGreaterEqual(max(sats), pure * 0.95)
+                sprite = render_indexed(build_model(uid, 0), red)
+                px = sprite.image.load()
+                worn = [
+                    px[x, y][:3]
+                    for y in range(sprite.image.height)
+                    for x in range(sprite.image.width)
+                    if sprite.mid(x, y) == MID_FACTION
+                ]
+                self.assertGreater(len(worn), 100)
+                self.assertEqual(set(worn) - ramp, set())
+
+    def test_the_body_slot_is_the_design_system_token(self):
+        # Iron and neutral are authored off-token on purpose — Iron's token
+        # is its shadow plane, neutral's khaki is a separation choice.
+        for key in ("meridian", "aurora", "verdant"):
+            with self.subTest(faction=key):
+                slot, theme = RAMPS[key][S_BODY], faction_by_key(key).body
+                # the spec's hex and the game's FactionTheme are the same
+                # colour written twice; a rounding step apart is not drift
+                self.assertLessEqual(max(abs(a - b) for a, b in zip(slot, theme)), 4)
+
+    def test_every_ramp_climbs_in_readable_steps(self):
+        for key, ramp in RAMPS.items():
+            with self.subTest(ramp=key):
+                lums = [palette.luminance(c) for c in ramp]
+                self.assertEqual(lums, sorted(lums))
+                gaps = [b - a for a, b in zip(lums, lums[1:])]
+                self.assertGreater(min(gaps), 12.0)
 
     def test_property_buildings_are_mostly_neutral_masonry(self):
         red, blue = faction_by_key("red"), faction_by_key("blue")
@@ -207,7 +236,7 @@ class ValueCeiling(unittest.TestCase):
     def test_no_tile_medians_into_the_unit_band(self):
         for tid, fac, px in self._tiles():
             with self.subTest(tile=tid, faction=fac.key):
-                median = statistics.median(luminance(c) for c in px)
+                median = statistics.median(terrain.luminance(c) for c in px)
                 self.assertLess(median, TERRAIN_MEDIAN_CEILING)
 
     def test_tiles_keep_their_highlight_share_off_the_unit_band(self):
@@ -225,11 +254,13 @@ class ValueCeiling(unittest.TestCase):
                     self.assertLessEqual(share, self.BUILDING_GLINT_SHARE)
 
     def test_the_unit_sheet_still_out_keys_every_tile(self):
-        units = sorted(luminance(c) for c in opaque_pixels(atlas.build_units_atlas()))
+        units = sorted(
+            terrain.luminance(c) for c in opaque_pixels(atlas.build_units_atlas())
+        )
         top_of_ramp = units[int(len(units) * 0.99)]
         for tid, fac, px in self._tiles():
             with self.subTest(tile=tid, faction=fac.key):
-                self.assertLess(max(luminance(c) for c in px), top_of_ramp)
+                self.assertLess(max(terrain.luminance(c) for c in px), top_of_ramp)
 
 
 class GroundSeparation(unittest.TestCase):
@@ -258,7 +289,7 @@ class GroundSeparation(unittest.TestCase):
         grounds = self._grounds()
         for a, b in (("road", "bridge"), ("road", "shoal"), ("bridge", "shoal")):
             with self.subTest(pair=(a, b)):
-                gap = abs(luminance(grounds[a]) - luminance(grounds[b]))
+                gap = abs(terrain.luminance(grounds[a]) - terrain.luminance(grounds[b]))
                 self.assertGreaterEqual(gap, self.MIN_SEPARATION)
 
     def test_plains_reads_apart_from_the_ground_it_borders(self):
@@ -273,7 +304,7 @@ class GroundSeparation(unittest.TestCase):
                 gap = sum((a - b) ** 2 for a, b in zip(plains, ground)) ** 0.5
                 self.assertGreaterEqual(gap, 40.0)
         self.assertGreaterEqual(
-            abs(luminance(plains) - luminance(grounds["road"])), 15.0
+            abs(terrain.luminance(plains) - terrain.luminance(grounds["road"])), 15.0
         )
 
 
@@ -345,24 +376,29 @@ class RowSeparation(unittest.TestCase):
     from the neutral row — and from any faction's acted grey-out. Iron's
     inverted scheme (light-steel hull, dark slate accents) is what these
     numbers pin.
+
+    Measured over the pixels the material map calls the faction's — the
+    gunmetal, the accents and the shadow are identical on every row, so an
+    all-pixel mean drags every army toward every other one. That dilution is
+    what the old shadow exclusion was patching around; the material id says
+    it exactly.
     """
 
-    # The dithered drop shadow is deliberately identical on every row, so it
-    # dilutes a row-mean toward every other row's; the gate measures armies,
-    # not their shadows.
-    SHADOW: tuple[int, int, int] = (16, 18, 24)
-
-    def _row_mean(self, img, row: int) -> tuple[float, float, float]:
-        px = img.load()
+    def _row_mean(self, key: str) -> tuple[float, float, float]:
+        fac = faction_by_key(key)
         tot = [0, 0, 0]
         n = 0
-        for y in range(row * 64, row * 64 + 64):
-            for x in range(img.width):
-                r, g, b, a = px[x, y]
-                if a > 200 and (r, g, b) != self.SHADOW:
-                    tot[0] += r
-                    tot[1] += g
-                    tot[2] += b
+        for uid in ATLAS_ORDER:
+            sprite = render_indexed(build_model(uid, 0), fac)
+            px = sprite.image.load()
+            for y in range(sprite.image.height):
+                for x in range(sprite.image.width):
+                    if sprite.mid(x, y) != MID_FACTION:
+                        continue
+                    c = px[x, y]
+                    tot[0] += c[0]
+                    tot[1] += c[1]
+                    tot[2] += c[2]
                     n += 1
         return (tot[0] / n, tot[1] / n, tot[2] / n)
 
@@ -370,17 +406,14 @@ class RowSeparation(unittest.TestCase):
         return sum((ai - bi) ** 2 for ai, bi in zip(a, b)) ** 0.5
 
     def test_iron_row_is_far_from_neutral_row(self):
-        img = atlas.build_units_atlas()
-        rows = {f.key: i for i, f in enumerate(FACTIONS)}
-        neutral = self._row_mean(img, rows["neutral"])
-        iron = self._row_mean(img, rows["iron"])
         # The shipped PixVoxel art held ~100; the pre-review generator sat
         # at ~10, which is indistinguishable. Require a wide margin.
-        self.assertGreater(self._dist(neutral, iron), 60.0)
+        self.assertGreater(
+            self._dist(self._row_mean("neutral"), self._row_mean("iron")), 60.0
+        )
 
     def test_every_faction_pair_separates(self):
-        img = atlas.build_units_atlas()
-        means = [self._row_mean(img, i) for i in range(len(FACTIONS))]
+        means = [self._row_mean(f.key) for f in FACTIONS]
         for i in range(len(FACTIONS)):
             for j in range(i + 1, len(FACTIONS)):
                 with self.subTest(pair=(FACTIONS[i].key, FACTIONS[j].key)):
@@ -485,6 +518,108 @@ class Silhouette(unittest.TestCase):
                         self.assertGreater(iou, 0.85)  # debt still real
                     else:
                         self.assertLessEqual(iou, 0.85)
+
+
+class IndexedPalette(unittest.TestCase):
+    """The build gates from the sprite fix spec, section 9.
+
+    They fail the atlas rather than the review: the palette defect the spec
+    measured (1,076-1,314 colours per row, 129-294 per sprite, four greys
+    within 3/channel of each other) is invisible in a contact sheet and
+    obvious in a histogram.
+    """
+
+    SHADOW = (16, 18, 24)  # the deliberate contact/altitude dither
+    FOAM = (226, 240, 250)
+
+    def _pixels(self, img) -> list[tuple[int, int, int, int]]:
+        raw = img.convert("RGBA").tobytes()
+        return [tuple(raw[i : i + 4]) for i in range(0, len(raw), 4)]
+
+    def _opaque(self, cell) -> list[tuple[int, int, int]]:
+        return [p[:3] for p in self._pixels(cell) if p[3] == 255]
+
+    def test_no_sprite_spends_more_than_24_colours(self):
+        for fac in FACTIONS:
+            for uid in ATLAS_ORDER:
+                with self.subTest(faction=fac.key, unit=uid):
+                    self.assertLessEqual(
+                        len(set(self._opaque(atlas.unit_cell(uid, fac)))), 24
+                    )
+
+    def test_the_atlas_carries_no_semi_transparent_pixel(self):
+        # 9.8% of the shipped atlas was partial alpha — halos at cut-in.
+        for frame in (0, 1):
+            with self.subTest(frame=frame):
+                alpha = {p[3] for p in self._pixels(atlas.build_units_atlas(frame))}
+                self.assertEqual(alpha - {0, 255}, set())
+
+    def test_no_isolated_pixel_outside_the_dither(self):
+        """Spec item 10: a pixel differing from all four of its orthogonal
+        neighbours is dirt at cut-in and shimmer at zoom-out. The shadow and
+        the foam are the intentional dither and are exempt by colour."""
+        intentional = {self.SHADOW, self.FOAM}
+        for fac in FACTIONS:
+            for uid in ATLAS_ORDER:
+                cell = atlas.unit_cell(uid, fac).convert("RGBA")
+                px = cell.load()
+                w, h = cell.size
+                stray = []
+                for y in range(1, h - 1):
+                    for x in range(1, w - 1):
+                        here = px[x, y]
+                        if here[3] != 255 or here[:3] in intentional:
+                            continue
+                        neigh = [
+                            px[x - 1, y],
+                            px[x + 1, y],
+                            px[x, y - 1],
+                            px[x, y + 1],
+                        ]
+                        if any(
+                            n[3] != 255 or n[:3] in intentional for n in neigh
+                        ) or any(n[:3] == here[:3] for n in neigh):
+                            continue
+                        stray.append((x, y))
+                with self.subTest(faction=fac.key, unit=uid):
+                    self.assertEqual(stray, [])
+
+    def test_iron_sits_with_the_chromatic_factions_not_above_them(self):
+        """Shipped Iron put 27-51% of its pixels above L160 and used pure
+        white, which made the darkest faction the loudest object on the
+        board. Its share of the bright band now has to sit in the same order
+        of magnitude as the chromatic factions' — measured 3.8% against
+        3.0% — rather than an order above them."""
+        shares = {}
+        for fac in FACTIONS:
+            bright = total = 0
+            for uid in ATLAS_ORDER:
+                sprite = render_indexed(build_model(uid, 0), fac)
+                px = sprite.image.load()
+                for y in range(sprite.image.height):
+                    for x in range(sprite.image.width):
+                        if sprite.mid(x, y) != MID_FACTION:
+                            continue
+                        total += 1
+                        bright += palette.luminance(px[x, y][:3]) > 160
+            shares[fac.key] = bright / total
+        chromatic = max(shares[k] for k in ("meridian", "aurora", "verdant"))
+        self.assertLessEqual(shares["iron"], chromatic * 1.5)
+
+    def test_the_contour_is_the_factions_own_darkest_slot(self):
+        """Not a universal black stuck on after tinting — the shipped sheets
+        carried #101218 exactly 1,236 times in all five rows."""
+        for fac in FACTIONS:
+            with self.subTest(faction=fac.key):
+                sprite = render_indexed(build_model("tank", 0), fac)
+                px = sprite.image.load()
+                contour = {
+                    px[x, y][:3]
+                    for y in range(sprite.image.height)
+                    for x in range(sprite.image.width)
+                    if sprite.mid(x, y) == 0 and px[x, y][3] == 255
+                }
+                self.assertIn(RAMPS[fac.key][0], contour)
 
 
 if __name__ == "__main__":

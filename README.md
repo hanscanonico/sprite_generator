@@ -31,21 +31,29 @@ neutral's slate theme included. Weapon silhouettes follow each unit's
 unarmed). Property terrains (city, base, hq, airport, port) are tinted per
 row; every other terrain repeats one tile down its column.
 
-Team color follows a livery convention: the majority mass — vehicle chassis,
-ship hulls and decks, aircraft fuselage and wings — wears a lightly
-desaturated faction tint (the `hull` ramp, 20% toward chassis grey), while
-identity accents — tank turret crowns, truck cabs, wingtips and tail fins,
-building roofs — carry the pure faction color. The 2026-08-13 sprite review
-set the balance: the livery has to stay loud enough that an army reads its
-faction at board zoom, so livery covers most of the sprite and the pure
-accents sit on top of it, not the other way around. **Iron is inverted**: its
-theme hue is a slate a step off the chassis grey, so a straight tint made an
-iron army identical to the neutral row and to any faction's acted grey-out —
-iron therefore fields light-steel hulls and keeps its dark slate on the
-accents, carrying its identity in value structure instead of hue. Buildings
-are neutral concrete and stone under faction-colored roofs, caps and banners.
-Only air units cast a drop shadow (ships sit in a displacement shadow with
-waterline foam; land units cast none) — the shadow is the airborne cue.
+Units are painted out of **indexed ramps**: six slots per faction — S0
+contour, S1 under, S2 shadow, S3 body, S4 top, S5 rim — plus one shared
+gunmetal ramp and a small derived ramp per fixed accent. A face normal picks
+the slot and the ramp picks the colour, so a sprite spends about twenty
+palette entries instead of a few hundred, and a faction is a ramp swap rather
+than a blend. **S3 is the design-system token itself**: the old livery
+multiplied the faction hue against a chassis grey, which preserved hue and
+halved brightness, so every army read a value darker than its own brand.
+Every pixel also carries a **material id** — 0 contour, 1 faction, 2
+gunmetal, 3 fixed accent — and only material 1 moves between rows.
+**Iron is inverted**: its theme colour is at the value floor, so it is Iron's
+shadow plane and the identity comes from the near-black-to-light-steel jump
+no other faction has. Its ceiling is pulled in — lit planes stop at the body
+slot and only the rim steps above — because the previous pass overshot and
+made the dark faction the brightest thing on the board. Neutral goes warm
+khaki so it separates from Iron by hue rather than by value. Buildings are
+neutral concrete and stone under faction-colored roofs, caps and banners, and
+still render through the older shading path (`render`), which terrain shares.
+Shadow density encodes altitude: land units get a quarter-tone contact
+shadow, air units a half-tone one offset down-right with ground showing
+between, ships a displacement shadow with waterline foam. Nothing a unit
+emits is semi-transparent — every shadow and fleck is an opaque dither,
+because partial alpha is a blurred halo at cut-in scale.
 
 ## Setup
 
@@ -107,17 +115,25 @@ that pipeline's paste step can be pointed at this art instead.
 
 1. **`spritegen/voxel.py`** — a tiny dimetric voxel engine. Screen
    `x=(vx-vy)*2, y=(vx+vy)-vz*2`, each voxel a 4x4 cube sprite overlapping
-   its neighbours by 2px (the classic 2px stair edge). Painter's-algorithm
-   ordering, three face tones per material (pure color on the player-facing
-   left face), neighbour-aware ambient occlusion plus ground-contact
-   occlusion and a vertical depth gradient (tall masses darken toward their
-   base), rim light on unshadowed front corners, hash dither on broad tops,
-   then a 1px per-part outline — each silhouette pixel is a dark tint of the
-   part it borders. `Model.chamfer` cuts corner columns so
-   turrets, cabs and roofs read as octagonal masses instead of cubes.
-2. **`spritegen/palette.py`** — faction ramps mirroring the game's
+   its neighbours by 2px (the classic 2px stair edge), painter's-algorithm
+   ordering, and `Model.chamfer` cutting corner columns so turrets, cabs and
+   roofs read as octagonal masses instead of cubes. Two renderers sit on
+   that geometry:
+   - `render_indexed` (units) shades **per face normal into ramp slots** —
+     top, rim, body, shadow, under — with ambient occlusion, the ground
+     contact and the depth gradient charged as whole slot steps rather than
+     as fractions of a colour. Then a per-faction S0 contour, doubled on the
+     lower-right edges the unit has to separate from the ground on, S0
+     between two materials whose values are too close to read apart, and a
+     despeckle pass folding lone pixels into the plane they were nearly part
+     of. It also returns a per-pixel material id.
+   - `render` (terrain and buildings) is the older path: three shaded face
+     tones per material, fractional occlusion, hash dither on broad tops and
+     a 1px per-part outline.
+2. **`spritegen/palette.py`** — the indexed ramps and the material-to-slot
+   table units are painted from, the faction colours mirroring the game's
    `CommanderVisuals`, fixed materials (gunmetal, track, glass, skin, ...),
-   shading math, and the deterministic hash noise.
+   the older shading math, and the deterministic hash noise.
 3. **`spritegen/units.py`** — 18 authored models, all facing +y
    (screen lower-left) like the game's art. Land units get a contact
    shadow, ships sit in a flat displacement shadow with foam hugging the
