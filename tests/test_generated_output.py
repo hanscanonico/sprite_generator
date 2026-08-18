@@ -419,6 +419,42 @@ class RowSeparation(unittest.TestCase):
                 with self.subTest(pair=(FACTIONS[i].key, FACTIONS[j].key)):
                     self.assertGreater(self._dist(means[i], means[j]), 30.0)
 
+    def _cell_mean(self, key: str) -> tuple[float, float, float]:
+        """The whole army as composed — gunmetal, accents and all — which is
+        what the board actually shows."""
+        fac = faction_by_key(key)
+        tot = [0, 0, 0]
+        n = 0
+        for uid in ATLAS_ORDER:
+            cell = atlas.unit_cell(uid, fac).convert("RGBA")
+            px = cell.load()
+            for y in range(cell.height):
+                for x in range(cell.width):
+                    r, g, b, a = px[x, y]
+                    if a != 255 or (r, g, b) == (16, 18, 24):  # the dither
+                        continue
+                    tot[0] += r
+                    tot[1] += g
+                    tot[2] += b
+                    n += 1
+        return (tot[0] / n, tot[1] / n, tot[2] / n)
+
+    def test_composed_rows_separate_too(self):
+        """The faction-pixel measurement above is the honest one, but it can
+        only be honest about the pixels it counts: the shared gunmetal grew
+        with the indexed ramps, so a row's composed mean sits closer to its
+        neighbours' than it did (neutral-iron 61.6 before this palette, 43.1
+        after; iron-verdant 87.2 -> 40.3). That is the dilution, not the
+        armies converging — but it is what a player sees, so it is gated
+        rather than left to the faction-pixel figure alone.
+        """
+        means = {f.key: self._cell_mean(f.key) for f in FACTIONS}
+        keys = list(means)
+        for i in range(len(keys)):
+            for j in range(i + 1, len(keys)):
+                with self.subTest(pair=(keys[i], keys[j])):
+                    self.assertGreater(self._dist(means[keys[i]], means[keys[j]]), 35.0)
+
     def test_faction_pixels_keep_their_chroma(self):
         # Review measurement: the red row's saturation p90 was 0.53 against
         # the shipped art's 0.93 — "averaged down to 32px a red tank is a
