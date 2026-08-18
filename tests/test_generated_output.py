@@ -330,8 +330,13 @@ class UnitBandCoverage(unittest.TestCase):
         neutral is a mid-value khaki because what separates it from Iron is
         HUE (`RowSeparation`, and the ramp's own comment), so a neutral
         authored down to the dimmest mean walks straight into the collapsed
-        neutral/iron pair the 2026-08-13 review blocked on. What the top
-        plane may not do is sit in the bright band at all, which is the
+        neutral/iron pair the 2026-08-13 review blocked on. That tension is
+        measured, not asserted: the row means sit 64.8 apart against
+        `RowSeparation`'s bar of 60, and darkening neutral's three mid slots
+        by 15% takes the pair to 56.4 — under the bar. So neutral is still
+        the brightest row by mean (109.8 against 93-103) and this gate says
+        only that it no longer owns the bright band by four times. What the
+        top plane may not do is sit in that band at all, which is the
         4,280-pixel half of the finding and is pinned first.
         """
         self.assertLess(palette.luminance(RAMPS["neutral"][palette.S_TOP]), 160.0)

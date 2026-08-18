@@ -39,10 +39,11 @@ def _rotor_collar(
     """Paint a rotor's hub cap and its four blade ROOTS in livery.
 
     A helicopter's disc is the one large mass on the sheet that carries no
-    team colour, which is what left the two copters the only units under the
-    55% faction-share gate. The roots are where a real airframe's paint runs
-    out onto the blade, so the collar buys the share back without touching
-    the silhouette or lightening the sweep at the tips.
+    team colour, which is what put b_copter under the 55% faction-share gate
+    (53.9%) and t_copter next to it at 60.2%. The roots are where a real
+    airframe's paint runs out onto the blade, so the collar buys the share
+    back without touching the silhouette or lightening the sweep at the tips.
+    Both discs get it, so the two copters answer the gate the same way.
     """
     m.set(cx, cy, z, "hull_lt")
     for dx, dy in arms:
