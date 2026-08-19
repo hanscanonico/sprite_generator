@@ -85,25 +85,28 @@ class Model:
                 self.vox.pop((cx, cy, z), None)
 
 
-def _face_pixels(sx: int, sy: int) -> dict[str, list[tuple[int, int]]]:
-    """The 4x4 cube sprite at screen anchor (sx, sy): top / left / right."""
-    return {
-        "top": [
-            (sx + 1, sy),
-            (sx + 2, sy),
-            (sx, sy + 1),
-            (sx + 1, sy + 1),
-            (sx + 2, sy + 1),
-            (sx + 3, sy + 1),
-        ],
-        "left": [(sx, sy + 2), (sx + 1, sy + 2), (sx, sy + 3), (sx + 1, sy + 3)],
-        "right": [
-            (sx + 2, sy + 2),
-            (sx + 3, sy + 2),
-            (sx + 2, sy + 3),
-            (sx + 3, sy + 3),
-        ],
-    }
+def _face_pixels(sx: int, sy: int, k: int = 1) -> dict[str, list[tuple[int, int]]]:
+    """The 4k x 4k cube sprite at screen anchor (sx, sy): top / left / right.
+
+    `k` is the DENSITY: how many pixels one voxel edge is drawn at, over the
+    shipped 4x4 cube. It is the only geometric knob in the engine, and it is
+    what a 128px cell would be emitted through (k=2). It scales the drawing,
+    not the model — see `tests/measure_128.py` and `docs/density_128.md` for
+    what that distinction costs.
+
+    The top face is the dimetric rhombus: 2k rows, row j spanning
+    2k-1-j .. 2k+j, so it widens 2, 4, ... 4k. The two side faces are the
+    2k x 2k blocks under it. At k=1 that is the shipped 4x4 cube exactly.
+    """
+    top: list[tuple[int, int]] = []
+    for j in range(2 * k):
+        top.extend((sx + i, sy + j) for i in range(2 * k - 1 - j, 2 * k + j + 1))
+    left: list[tuple[int, int]] = []
+    right: list[tuple[int, int]] = []
+    for j in range(2 * k, 4 * k):
+        left.extend((sx + i, sy + j) for i in range(2 * k))
+        right.extend((sx + i, sy + j) for i in range(2 * k, 4 * k))
+    return {"top": top, "left": left, "right": right}
 
 
 Anchors = dict[tuple[int, int, int], tuple[int, int]]
@@ -133,16 +136,16 @@ CONTOUR_WEIGHT: dict[tuple[int, int], int] = {UP: 4, LEFT: 4, DOWN: 2, RIGHT: 2}
 _HALO: dict[tuple[int, int], int] = {UP: 1, LEFT: 1, DOWN: 2, RIGHT: 2}
 
 
-def _bounds(model: Model) -> tuple[Anchors, int, int, int, int]:
+def _bounds(model: Model, k: int = 1) -> tuple[Anchors, int, int, int, int]:
     """Screen anchors per voxel plus the crop the sprite needs (2px margin for
-    the doubled terrain-facing contour)."""
+    the doubled terrain-facing contour), at density `k`."""
     anchors: Anchors = {}
     for x, y, z in model.vox:
-        anchors[(x, y, z)] = ((x - y) * 2, (x + y) - z * 2)
-    minx = min(a[0] for a in anchors.values()) - 1
-    miny = min(a[1] for a in anchors.values()) - 1
-    w = max(a[0] for a in anchors.values()) + 4 + 2 - minx
-    h = max(a[1] for a in anchors.values()) + 4 + 2 - miny
+        anchors[(x, y, z)] = ((x - y) * 2 * k, ((x + y) - z * 2) * k)
+    minx = min(a[0] for a in anchors.values()) - k
+    miny = min(a[1] for a in anchors.values()) - k
+    w = max(a[0] for a in anchors.values()) + (4 + 2) * k - minx
+    h = max(a[1] for a in anchors.values()) + (4 + 2) * k - miny
     return anchors, minx, miny, w, h
 
 
@@ -162,7 +165,7 @@ class IndexedSprite:
 
 
 def render_indexed(
-    model: Model, faction: Faction, outline: bool = True
+    model: Model, faction: Faction, outline: bool = True, k: int = 1
 ) -> IndexedSprite:
     """Render a unit out of the indexed ramps: one flat slot per visible plane.
 
@@ -175,7 +178,7 @@ def render_indexed(
     if not model.vox:
         return IndexedSprite(Image.new("RGBA", (1, 1), (0, 0, 0, 0)), bytearray([255]))
 
-    anchors, minx, miny, w, h = _bounds(model)
+    anchors, minx, miny, w, h = _bounds(model, k)
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     px = img.load()
     mids = bytearray([MID_EMPTY]) * (w * h)
@@ -231,7 +234,7 @@ def render_indexed(
             "left": -left_steps,
             "right": -1 - right_steps,
         }
-        for face, pixels in _face_pixels(sx, sy).items():
+        for face, pixels in _face_pixels(sx, sy, k).items():
             # The rim is the one place a ceiling gives way, and it gives way
             # to the top of the ramp: it is an edge one voxel deep, and it is
             # where Iron's light-steel flash lives. Lifting Iron only to its
@@ -250,7 +253,7 @@ def render_indexed(
                 ramps[idx] = ramp
 
     if outline:
-        _contour(img, mids, ramps)
+        _contour(img, mids, ramps, k)
     _despeckle(img, mids)
     return IndexedSprite(img, mids)
 
@@ -326,8 +329,15 @@ def _despeckle(img: Image.Image, mids: bytearray) -> None:
             mids[y * w + x] = mids[src]
 
 
-def _contour(img: Image.Image, mids: bytearray, ramps: list[Ramp | None]) -> None:
-    """Per-faction S0 contour, CONTOUR_WEIGHT pixels thick across each edge.
+def _contour(
+    img: Image.Image, mids: bytearray, ramps: list[Ramp | None], k: int = 1
+) -> None:
+    """Per-faction S0 contour, CONTOUR_WEIGHT * k pixels thick across each edge.
+
+    The weight is stated in LOGICAL pixels (round 10), so it scales with the
+    density: at k=2 the band is 8 source pixels on the lit edges, which is the
+    same one logical pixel it is at k=1 — and the same reason 128 buys no
+    outline the board can see that 64 does not.
 
     Every contour pixel takes the S0 of the ramp it borders — never a shared
     black, which reads as a sticker edge. The band runs `_HALO` pixels outward
@@ -372,17 +382,18 @@ def _contour(img: Image.Image, mids: bytearray, ramps: list[Ramp | None]) -> Non
             ramp = ramps[yy * w + xx]
             if ramp is None:
                 continue
-            for step, weight in CONTOUR_WEIGHT.items():
+            for step, logical in CONTOUR_WEIGHT.items():
                 if solid(xx + step[0], yy + step[1]):
                     continue
-                halo = _HALO[step]
-                for k in range(1, halo + 1):  # outward, into the transparency
-                    ex, ey = xx + step[0] * k, yy + step[1] * k
+                weight = logical * k
+                halo = _HALO[step] * k
+                for out in range(1, halo + 1):  # outward, into the transparency
+                    ex, ey = xx + step[0] * out, yy + step[1] * out
                     if not (0 <= ex < w and 0 <= ey < h) or solid(ex, ey):
                         break
                     claim(ex, ey, ramp)
-                for k in range(weight - halo):  # inward, off the plane behind
-                    ex, ey = xx - step[0] * k, yy - step[1] * k
+                for inw in range(weight - halo):  # inward, off the plane behind
+                    ex, ey = xx - step[0] * inw, yy - step[1] * inw
                     if not (0 <= ex < w and 0 <= ey < h) or not solid(ex, ey):
                         break
                     # The band eats plane, never highlight — the same rule
@@ -398,7 +409,7 @@ def _contour(img: Image.Image, mids: bytearray, ramps: list[Ramp | None]) -> Non
                         break
                     claim(ex, ey, ramp, step)
 
-    retreats = _settle_rims(px, mids, w, h, edges, reached)
+    retreats = _settle_rims(px, mids, w, h, edges, reached, k)
     interior = _interior_contour(px, mids, ramps, w, h, opaque)
     for xx, yy, ramp in [(x, y, r) for (x, y), r in edges.items()] + interior:
         c = ramp[S_CONTOUR]
@@ -440,6 +451,7 @@ def _settle_rims(
     h: int,
     edges: dict[tuple[int, int], Ramp],
     reached: list[tuple[int, int, tuple[int, int], Ramp]],
+    k: int = 1,
 ) -> dict[tuple[int, int], Ramp]:
     """Move every rim the band reached one plane inboard, or leave it standing.
 
@@ -457,8 +469,8 @@ def _settle_rims(
     retreats: dict[tuple[int, int], tuple[Ramp, tuple[int, int]]] = {}
     for x, y, step, ramp in reached:
         target = None
-        for k in range(1, CONTOUR_WEIGHT[step] + 1):
-            nx, ny = x - step[0] * k, y - step[1] * k
+        for step_back in range(1, CONTOUR_WEIGHT[step] * k + 1):
+            nx, ny = x - step[0] * step_back, y - step[1] * step_back
             if not (0 <= nx < w and 0 <= ny < h):
                 break
             # The band, and the rest of the leading edge it is eating: a rim

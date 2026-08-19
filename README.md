@@ -259,3 +259,19 @@ other for byte determinism, and a pixel comparison of the committed
 `iso_buildings` cells — against fresh generator output. Change what the
 generator draws and those snapshots have to be regenerated in the same
 commit, or CI fails.
+
+## Cell density
+
+The sheet is emitted at a **64px cell**, and that is the shipped default.
+`voxel.render_indexed` takes a density `k` — the pixels one voxel edge is
+drawn at, over the shipped 4x4 cube — so a 128px candidate (`k = 2`) can be
+emitted and measured. It defaults to 1 and the 64px output is byte-identical
+with it.
+
+**`docs/density_128.md` is the committed measurement of whether 128 should
+ship, and the verdict is no** — the board's own arithmetic gives a 128 cell
+the same 16 logical pixels per tile that 64 has, decimates it 2:1 at the
+default rung where 64 lands exactly 1:1, and the emission the models produce
+today is 93.3% a nearest 2x upscale of the 64px art. Read that document before
+re-opening the question; it also records the order a future attempt should
+take (the cut-in before the models).
