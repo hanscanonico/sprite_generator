@@ -4,6 +4,10 @@ units_atlas.png   — 18 columns x 5 rows of 64px RGBA cells (1152x320),
                     columns in data/units atlas_col order, rows in
                     SideIdentity order (neutral, meridian, aurora, iron,
                     verdant).
+units_atlas_figures.png
+                  — the same sheet with the tile's cast shadow left off,
+                    for the cut-ins, which draw the art at 1:1 over a ground
+                    plane of their own (see compose_cell's `shadow`).
 terrain_atlas.png — 14 columns x 5 rows of 64px RGBA cells (896x320),
                     columns in tools/generate_tiles.gd order; non-property
                     columns repeat one opaque tile down all rows, property
@@ -32,22 +36,26 @@ CELL = 64
 _BOB_BOTTOM = {"air": 43, "sea": 54}
 
 
-def unit_cell(uid: str, fac: Faction, frame: int = 0) -> Image.Image:
+def unit_cell(
+    uid: str, fac: Faction, frame: int = 0, shadow: bool = True
+) -> Image.Image:
     """One atlas cell. Units render through the indexed ramps; terrain and
     buildings keep the shading renderer until their own pass moves them."""
     kind = UNITS[uid][1]
     bottom = _BOB_BOTTOM.get(kind) if frame == 1 else None
     sprite = render_indexed(build_model(uid, frame), fac).image
-    return compose_cell(sprite, kind, bottom=bottom, wake=uid in WAKE)
+    return compose_cell(sprite, kind, bottom=bottom, wake=uid in WAKE, shadow=shadow)
 
 
-def build_units_atlas(frame: int = 0) -> Image.Image:
+def build_units_atlas(frame: int = 0, shadow: bool = True) -> Image.Image:
     atlas = Image.new(
         "RGBA", (len(ATLAS_ORDER) * CELL, len(FACTIONS) * CELL), (0, 0, 0, 0)
     )
     for row, fac in enumerate(FACTIONS):
         for col, uid in enumerate(ATLAS_ORDER):
-            atlas.alpha_composite(unit_cell(uid, fac, frame), (col * CELL, row * CELL))
+            atlas.alpha_composite(
+                unit_cell(uid, fac, frame, shadow), (col * CELL, row * CELL)
+            )
     return atlas
 
 

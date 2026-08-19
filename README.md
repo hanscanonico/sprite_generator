@@ -117,6 +117,8 @@ python3 -m venv .venv
 | File | Contract |
 | --- | --- |
 | `units_atlas.png` | 1152x320 RGBA — drop-in `assets/tiles/units_atlas.png` |
+| `units_atlas_b.png` | ambient animation frame B: rotors swept, air and sea bobbed |
+| `units_atlas_figures.png` | the same army with the tile's cast shadow subtracted, for the cut-ins (see below) |
 | `terrain_atlas.png` | 896x320 RGBA — drop-in `assets/tiles/terrain_atlas.png`; property columns carry alpha |
 | `units/<id>_<team>.png` | 90 cells, the inputs `tools/paste_unit_sprites.gd` reads |
 | `iso_buildings/<id>_<team>.png` | 25 property-building cells for `assets/sprites/iso_buildings` |
@@ -125,6 +127,18 @@ python3 -m venv .venv
 | `autotiles/{roads,rivers,coast,shoals,woods}.png` | 16-variant connection sheets (see below) |
 | `autotiles/bridges.png` | the two bridge deck orientations, E-W then N-S |
 | `autotiles/sea.png` | the three sea phase variants, phase 0 first (see below) |
+
+`units_atlas_figures.png` exists because a shadow is drawn for a scale. The
+tile shadow is an opaque checkerboard so the ground shows between its pixels,
+which reads as half-tone under a 16px sprite; the game's cut-ins draw the same
+64px cell at 1:1 over a ground plane and a contact shadow of their own, and
+there the eye resolves the dots one by one — a player reported them as "weird
+black points at the bottom of the tank". The sheet **subtracts** that shadow
+from the composed cell rather than composing a cell without one, so it is the
+board's art and can never drift from it: the waterline foam is placed against
+the composed cell's own spans, so a shadow that was never drawn would have
+moved the foam. Everything else — every hull pixel, every fleck of foam — is
+identical, which is what the `FigureSheet` tests hold it to.
 
 The `autotiles/` sheets are the opt-in upgrade path beyond the fixed
 14-column terrain contract: roads and rivers as N/E/S/W connection sets (so

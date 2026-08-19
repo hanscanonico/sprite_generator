@@ -9,6 +9,8 @@ the same bytes.
 Outputs (under --out, default ./out):
   units_atlas.png        1152x320 RGBA — drop-in for assets/tiles/units_atlas.png
   units_atlas_b.png      ambient animation frame B (rotors swept, air/sea bobbed)
+  units_atlas_figures.png the same army with the tile's cast shadow left off,
+                          for the cut-ins, which draw at 1:1 on their own ground
   terrain_atlas.png       896x320 RGBA — drop-in for assets/tiles/terrain_atlas.png
                           (the five property columns are transparent overlays)
   units/<id>_<team>.png   64x64 RGBA cells for tools/paste_unit_sprites.gd
@@ -59,11 +61,16 @@ def _preview_only(ids: list[str], team: str, zoom: int, out: Path) -> None:
 def _install(src: Path, dest: Path) -> None:
     import shutil
 
-    pairs = [
+    atlases = [
         (src / "units_atlas.png", dest / "assets/tiles/units_atlas.png"),
         (src / "units_atlas_b.png", dest / "assets/tiles/units_atlas_b.png"),
+        (
+            src / "units_atlas_figures.png",
+            dest / "assets/tiles/units_atlas_figures.png",
+        ),
         (src / "terrain_atlas.png", dest / "assets/tiles/terrain_atlas.png"),
     ]
+    pairs = list(atlases)
     for cell in sorted((src / "units").glob("*.png")):
         pairs.append((cell, dest / "assets/sprites/units" / cell.name))
     for cell in sorted((src / "iso_buildings").glob("*.png")):
@@ -75,7 +82,7 @@ def _install(src: Path, dest: Path) -> None:
             sys.exit(f"missing {s} — run a full generation first")
         d.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(s, d)
-    print(f"installed atlases + {len(pairs) - 3} cells into {dest}")
+    print(f"installed atlases + {len(pairs) - len(atlases)} cells into {dest}")
 
 
 def main() -> None:
@@ -124,6 +131,9 @@ def main() -> None:
 
     print("building ambient frame B (rotors swept, air/sea bobbed)")
     _write(atlas.build_units_atlas(frame=1), args.out / "units_atlas_b.png")
+
+    print("building the figure sheet (no tile shadow, for the cut-ins)")
+    _write(atlas.build_units_atlas(shadow=False), args.out / "units_atlas_figures.png")
 
     print("building terrain atlas (14 terrains x 5 rows)")
     terrain_atlas = atlas.build_terrain_atlas()

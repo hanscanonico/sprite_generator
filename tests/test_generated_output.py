@@ -136,6 +136,48 @@ class AtlasContract(unittest.TestCase):
         self.assertEqual(len(set(rows)), len(FACTIONS))
 
 
+class FigureSheet(unittest.TestCase):
+    """units_atlas_figures.png: the board's army, minus the tile's shadow.
+
+    The cut-ins draw the art at 1:1 over a ground plane of their own, where
+    the shadow's half-tone stops reading as shade and reads as loose dots.
+    What the sheet must never be is a second opinion on the ART: the figure
+    a cut-in blows up has to be the figure the board shows.
+    """
+
+    def test_it_removes_shadow_pixels_and_changes_nothing_else(self):
+        board = atlas.build_units_atlas().load()
+        figures = atlas.build_units_atlas(shadow=False).load()
+        removed = 0
+        for y in range(len(FACTIONS) * 64):
+            for x in range(len(ATLAS_ORDER) * 64):
+                if board[x, y] == figures[x, y]:
+                    continue
+                # The only legal difference: an opaque shadow pixel is gone.
+                self.assertEqual(figures[x, y][3], 0, f"repainted pixel at {x},{y}")
+                self.assertEqual(board[x, y][3], 255, f"half-shadow at {x},{y}")
+                removed += 1
+        self.assertGreater(removed, 0)
+
+    def test_every_unit_of_every_faction_loses_its_shadow(self):
+        board = atlas.build_units_atlas()
+        figures = atlas.build_units_atlas(shadow=False)
+        for row, fac in enumerate(FACTIONS):
+            for col, uid in enumerate(ATLAS_ORDER):
+                box = (col * 64, row * 64, col * 64 + 64, row * 64 + 64)
+                self.assertNotEqual(
+                    board.crop(box).tobytes(),
+                    figures.crop(box).tobytes(),
+                    f"{uid} ({fac.key}) has no shadow to leave off",
+                )
+
+    def test_the_figure_sheet_is_reproducible(self):
+        self.assertEqual(
+            atlas.build_units_atlas(shadow=False).tobytes(),
+            atlas.build_units_atlas(shadow=False).tobytes(),
+        )
+
+
 class Determinism(unittest.TestCase):
     """No seeds, no RNG: identical bytes on every render."""
 

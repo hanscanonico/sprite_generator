@@ -747,6 +747,7 @@ def compose_cell(
     bottom: int | None = None,
     dx: int = 0,
     wake: bool = False,
+    shadow: bool = True,
 ) -> Image.Image:
     """Center a rendered sprite on a transparent atlas cell with its shadow.
 
@@ -766,6 +767,17 @@ def compose_cell(
     one a half-tone offset down-right with ground showing between. Nothing
     here is semi-transparent — every shadow and every fleck of foam is an
     opaque dither, because partial alpha is a blurred halo at cut-in scale.
+
+    `shadow=False` leaves that cast shadow off, for a surface that draws its
+    own ground and its own shadow rather than standing the cell on a tile:
+    the dither is a half-tone read at tile size, and at 1:1 — where one texel
+    is one screen pixel — the eye resolves the individual dots instead, which
+    is what the cut-ins were showing.
+
+    It SUBTRACTS rather than skips, so the cell is the tile's cell with those
+    pixels taken back out and can never be a second opinion on the art. The
+    waterline foam is why that matters: it is placed against the composed
+    cell's own spans, so a shadow that was never drawn would move the foam.
     """
     out = Image.new("RGBA", (cell, cell), (0, 0, 0, 0))
     w, h = sprite.size
@@ -776,17 +788,18 @@ def compose_cell(
     x0 = (cell - w) // 2 + dx
     y0 = bottom - h
 
+    cast: list[tuple[int, int]] = []
     if kind == "sea":
-        # Ships sit IN the water: a flat displacement shading right under the
-        # hull instead of a floating blob, then foam hugging the waterline.
+        # Ships sit IN the water: a flat displacement shading right under
+        # the hull instead of a floating blob, then foam at the waterline.
         rx = max(6, int(w * 0.42))
-        _dither_ellipse(out, cell // 2 + dx, bottom - 1, rx, max(2, rx // 5))
+        cast = _dither_ellipse(out, cell // 2 + dx, bottom - 1, rx, max(2, rx // 5))
     elif kind == "air":
         rx = max(6, int(w * 0.30))
-        _dither_ellipse(out, cell // 2 + dx + 4, 58, rx, max(2, rx // 3))
+        cast = _dither_ellipse(out, cell // 2 + dx + 4, 58, rx, max(2, rx // 3))
     elif kind == "land":
         rx = max(4, int(w * 0.34))
-        _dither_ellipse(
+        cast = _dither_ellipse(
             out, cell // 2 + dx, bottom - 1, rx, max(2, rx // 4), quarter=True
         )
     place_in_cell(out, sprite, x0, y0)
@@ -794,7 +807,22 @@ def compose_cell(
         if wake:
             _wake(out, sprite, x0, y0)
         _waterline_foam(out)
+    if not shadow:
+        _erase_shadow(out, cast)
     return out
+
+
+def _erase_shadow(img: Image.Image, cast: list[tuple[int, int]]) -> None:
+    """Clear the shadow the cell was composed with, leaving all else alone.
+
+    A cast pixel the sprite, the wake or the foam has since painted over is
+    no longer shadow and is kept: what comes out is only what is still the
+    tone the ellipse wrote there.
+    """
+    px = img.load()
+    for xx, yy in cast:
+        if px[xx, yy] == (*SHADOW, 255):
+            px[xx, yy] = (0, 0, 0, 0)
 
 
 def place_in_cell(cell_img: Image.Image, sprite: Image.Image, x0: int, y0: int) -> None:
@@ -816,6 +844,7 @@ def place_in_cell(cell_img: Image.Image, sprite: Image.Image, x0: int, y0: int) 
 
 FOAM_ROWS = 4
 FOAM: RGB = (226, 240, 250)
+SHADOW: RGB = (16, 18, 24)
 # How far the wake runs on past the stern, in cell columns.
 WAKE_TRAIL = 6
 
@@ -896,16 +925,20 @@ def _waterline_foam(img: Image.Image) -> None:
 
 def _dither_ellipse(
     img: Image.Image, cx: int, cy: int, rx: int, ry: int, quarter: bool = False
-) -> None:
+) -> list[tuple[int, int]]:
     """A hard checkerboard shadow: opaque dark pixels, no partial alpha.
 
     Reads as half-tone from the board and stays crisp at cut-in scale, where
     a blurred alpha ellipse becomes a grey stain; the empty pixels let the
     terrain underneath show through, so the shadow tints without smearing.
     `quarter` is the lighter grid a land unit's contact shadow uses.
+
+    Returns the pixels it wrote, so a caller composing a shadowless cell can
+    take exactly those back out again — see compose_cell's `shadow`.
     """
     px = img.load()
     w, h = img.size
+    written = []
     for yy in range(cy - ry, cy + ry + 1):
         for xx in range(cx - rx, cx + rx + 1):
             if not (0 <= xx < w and 0 <= yy < h):
@@ -915,4 +948,6 @@ def _dither_ellipse(
             if ((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2 > 1.0:
                 continue
             if px[xx, yy][3] == 0:
-                px[xx, yy] = (16, 18, 24, 255)
+                px[xx, yy] = (*SHADOW, 255)
+                written.append((xx, yy))
+    return written
