@@ -33,10 +33,11 @@ from spritegen.voxel import render_indexed
 # here so this file runs without a Godot checkout beside it:
 # BattleView.TILE, the whole rungs of BattleZoom, and the window scales
 # `display/window/stretch/scale_mode = "integer"` leaves reachable over the
-# 640x360 canvas (360p, 720p, 1080p).
+# 640x360 canvas. The window is resizable and the game caps no resolution, so
+# the set runs up to a 4K display: 360p, 720p, 1080p, 1440p, 2160p.
 TILE = 16
 ZOOM_RUNGS = [1, 2, 3, 4, 5]
-WINDOW_SCALES = [1, 2, 3]
+WINDOW_SCALES = [1, 2, 3, 4, 6]
 DEFAULT_ZOOM = 2
 DEFAULT_WINDOW_SCALE = 2
 DENSITIES = [64, 128]

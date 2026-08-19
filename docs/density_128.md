@@ -9,7 +9,8 @@ board shows *fewer* of the sheet's pixels than at 64 does, the art gains zero
 logical pixels, and the emission that comes out of the generator today is
 93.3% identical to a nearest 2x upscale of the 64px art. The switch is not a
 knob; it is a re-authoring of every model, and even fully re-authored it pays
-at 5 of the 11 board rungs a player can reach and at none of the cut-in.
+nothing below the rung above the default one, and nothing at all in the
+cut-in.
 
 Take the readings again with `.venv/bin/python tests/measure_128.py`.
 
@@ -22,17 +23,19 @@ source pixel of a cell is worth
 
     texel:screen = s / (SPRITE_PX / TILE),    s = zoom x window_scale
 
-and the reachable `s` are `1 2 3 4 5 6 8 9 10 12 15`. The default play state —
-zoom 2 in a 720p window — is `s = 4`.
+and the reachable `s` are `1 2 3 4 5 6 8 9 10 12 15 16 18 20 24 30` — the
+window scale running 1 to 6 because the window is resizable and nothing caps
+the resolution, so 360p through a 4K display are all reachable. The default
+play state — zoom 2 in a 720p window — is `s = 4`.
 
 | | SPRITE_PX=64 | SPRITE_PX=128 |
 |---|---|---|
 | 1 logical px | 4 source px | 8 source px |
 | **logical px per tile** | **16** | **16** |
 | at the default `s=4` | **exactly 1:1** | 0.5 — every other pixel dropped |
-| every source pixel shown | `s >= 4` (8 of 11 rungs) | `s >= 8` (5 of 11 rungs) |
-| whole texel scale | `s = 4, 8, 12` | `s = 8` only |
-| best magnification reachable | 3.75:1 | **1.875:1 — never a whole step above 1:1** |
+| every source pixel shown | `s >= 4` (13 of 16 rungs) | `s >= 8` (10 of 16 rungs) |
+| whole texel scale | `s = 4, 8, 12, 16, 20, 24` | `s = 8, 16, 24` |
+| magnification at any reachable `s` | **twice the 128 sheet's, everywhere** | half the 64 sheet's |
 
 Two lines of that table are the whole finding.
 
@@ -49,10 +52,11 @@ cell lands one source texel on one screen pixel exactly — the shipped art is
 already at 1:1 where the game is actually played. A 128px cell at the same
 rung is decimated 2:1: it shows precisely the information a 64px cell shows,
 having stored four times as much. It first shows all of itself at `s = 8`,
-which needs zoom 4 in a 720p window or zoom 3 in a 1080p one, and it never
-gets a whole step above 1:1 anywhere on the ladder — where 64 reaches 2:1 and
-3:1. At `s = 8` both sheets cover the same screen area; that, and above, is
-the entire window in which 128 could look sharper.
+which needs zoom 4 in a 720p window or zoom 3 in a 1080p one, and it is at
+half the 64px sheet's magnification at **every** rung — where 64 is at 1:1,
+128 is dropping every other pixel. At `s = 8` and above both sheets cover the
+same screen area; that is the entire window in which 128 could look sharper,
+and it opens one rung past where the game is played.
 
 ## 2. The cut-in, where the resolution would have paid, is not parameterized
 
@@ -99,9 +103,12 @@ So the candidate is measured against the thing it must beat — a plain nearest
 
 **93.3% of the honest 128 emission is the 64 art, upscaled.** The 6.7% is
 facet stairs falling on a finer grid — a cube's diagonal, drawn 8px instead of
-4px, takes a truer staircase. That is a smoother edge on the same shape; no
-form in the sheet gains a feature, because no model gains a voxel. Rendered
-side by side the two rows are hard to tell apart at a glance.
+4px, takes a truer staircase. No form in the sheet gains a feature, because no
+model gains a voxel. Where the two rows *are* told apart, the denser drawing
+reads worse rather than sharper: bigger cubes overlap each other less, so each
+voxel's own top plate shows, and the md_tank's turret and hull come back
+stepped and chevroned where the upscale is smooth. That is the finding said
+twice — at this voxel count, drawing the cubes larger draws the cubes.
 
 The palette agrees, and this is the answer to whether the colour caps scale:
 **they do not, and they need not.** Peak colours per sprite is 23 at `k = 1`
@@ -113,8 +120,11 @@ did not gain information.
 Honestly filling 128 means re-authoring at roughly 2x voxel density on all
 three axes — about 8x the voxels, so the md_tank goes from 878 to some 7,000 —
 across 18 unit models, 14 terrains, 5 property buildings and 7 autotile
-sheets, every one of them hand-authored voxel code. That is the programme's
-whole art corpus, redrawn, to be visible at 5 of 11 board rungs.
+sheets, every one of them hand-authored voxel code — and only the unit
+renderer takes `k` at all; the terrain, property and autotile passes draw at
+64 with no density knob, so a whole-sheet candidate is more work again. That
+is the programme's whole art corpus, redrawn, to be visible one rung above
+where the game is played and never in the cut-in.
 
 ## 4. Recommendation
 
