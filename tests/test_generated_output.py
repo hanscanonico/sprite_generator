@@ -619,7 +619,7 @@ class PropertyOverlays(unittest.TestCase):
 
     Design review rounds 4 and 5: the five property columns baked the plains
     green into their cells, so a city on road or beach wore a green square.
-    They now carry the building, its base plate and its dithered shadow, and
+    They now carry the building, its base plate and its solid shadow, and
     nothing else; the board paints the ground under them.
     """
 
@@ -666,21 +666,51 @@ class PropertyOverlays(unittest.TestCase):
                     raw = cell.tobytes()
                     self.assertEqual({raw[i] for i in range(3, len(raw), 4)}, {0, 255})
 
-    def test_the_shadow_is_an_opaque_dither(self):
+    def _shadow(self, tid: str, fac) -> list[tuple[int, int]]:
+        px = self._cell(tid, fac).load()
+        return [
+            (x, y)
+            for y in range(CELL)
+            for x in range(CELL)
+            if px[x, y] == (*terrain.SHADOW, 255)
+        ]
+
+    def test_the_shadow_is_opaque_and_solid(self):
+        # Both parities, so it cannot go back to a 1px checkerboard unnoticed
+        # — see CastShadow for the measurement that retired that shape.
         for tid in sorted(terrain.PROPERTY):
             for fac in FACTIONS:
-                cell = self._cell(tid, fac)
-                px = cell.load()
-                shadow = [
-                    (x, y)
-                    for y in range(CELL)
-                    for x in range(CELL)
-                    if px[x, y] == (*terrain.SHADOW, 255)
-                ]
                 with self.subTest(tile=tid, faction=fac.key):
+                    shadow = self._shadow(tid, fac)
                     self.assertGreater(len(shadow), 0)
-                    # every shadow pixel on one phase of the checkerboard
-                    self.assertEqual({(x + y) % 2 for x, y in shadow}, {0})
+                    self.assertEqual({(x + y) % 2 for x, y in shadow}, {0, 1})
+
+    # CastShadow's tolerance is 0.15 over a whole army; a building's shadow is
+    # a ~130px band two pixels wide, so at 4:1 the sampling grid still lands on
+    # more of one diagonal than another and solid comes in at 0.69-1.38. That
+    # residual is the band's SHAPE. The checkerboard's was structure: 0.00-2.76
+    # at 4:1 and 0.00-2.00 at 2:1, where a phase draws none of the shadow at
+    # all. Solid measures 0.97-1.06 at 2:1 and exactly 1.0 at 1:1.
+    RUNG_TOLERANCE = 0.45
+
+    def test_every_rung_draws_the_same_share_of_the_shadow(self):
+        for tid in sorted(terrain.PROPERTY):
+            shadow = self._shadow(tid, FACTIONS[1])
+            for ratio in (4, 2, 1):
+                for phase_y in range(ratio):
+                    for phase_x in range(ratio):
+                        drawn = sum(
+                            1
+                            for x, y in shadow
+                            if x % ratio == phase_x and y % ratio == phase_y
+                        )
+                        share = drawn * ratio * ratio / len(shadow)
+                        with self.subTest(
+                            tile=tid, ratio=ratio, phase=(phase_x, phase_y)
+                        ):
+                            self.assertAlmostEqual(
+                                share, 1.0, delta=self.RUNG_TOLERANCE
+                            )
 
     def test_the_tile_and_the_exported_cell_place_one_building(self):
         # The atlas tile is the exported iso_buildings cell plus a shadow, so

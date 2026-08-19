@@ -32,7 +32,7 @@ unarmed). Property terrains (city, base, hq, airport, port) are tinted per
 row; every other terrain repeats one tile down its column.
 
 The five property columns are **transparent overlays**: the building, its
-base plate and a dithered drop shadow, with the ground around them left
+base plate and a solid drop shadow, with the ground around them left
 empty. Baking the plains green into those cells put a green square around
 every city standing on road or beach; the board paints the ground under a
 property and the building reads as an object on it. Consumers compose
@@ -106,6 +106,22 @@ to it. The sub's **wake** followed: it ran on the shadow's own parity so that
 it showed exactly where the checkerboard did not reach, so it is now drawn
 solid and over the shadow — foam is what the surface does over the
 displacement shading, not a stipple interleaved with it.
+
+The **buildings' drop shadow** (`terrain._drop_shadow`, a different drawer)
+was left on the checkerboard by that pass, which is why a city still wore a
+stippled fringe at 1:1. It is solid now on the same reading: over the five
+property cells the checkerboard drew **0%-276%** of its own density at rung 1
+and **0%-200%** at rung 2 — a whole sampling phase drawing none of it — where
+solid measures 0.97-1.06 at rung 2 and exactly 1.0 at rung 4. At rung 1 solid
+still spreads 0.69-1.38, and that residual is the band's own **shape**: a
+building's shadow is a ~130px silhouette two pixels wide, so the sampling grid
+lands on more of one diagonal than another however it is filled.
+`PropertyOverlays` holds it. The tone is unchanged and deliberately still the
+units' `SHADOW` — one shade on one board — the doubled coverage having been
+rendered on plains, road and shoal at all three rungs against the dither and
+three lighter tones: solid is indistinguishable from the dither at rungs 1 and
+2, reads as shade rather than dots at rung 4, and every lighter tone loses the
+shadow entirely on road and shoal when zoomed out.
 
 ## Setup
 

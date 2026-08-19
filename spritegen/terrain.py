@@ -473,19 +473,27 @@ PROPERTY_ANCHOR: dict[str, tuple[int, int]] = {
 
 # The shadow a building drops on whatever ground it is standing on: the
 # building's own silhouette, shifted down-right away from the light every
-# model is lit from, in the same dither tone the unit cells cast.
+# model is lit from, in the same tone the unit cells cast.
 SHADOW = (16, 18, 24)
 SHADOW_OFFSET = (2, 2)
 
 
 def _drop_shadow(cell: Image.Image, sprite: Image.Image, x0: int, y0: int) -> None:
-    """Stamp `sprite`'s shadow into `cell`, as a hard 50% dither.
+    """Stamp `sprite`'s silhouette into `cell` as a hard SOLID shadow.
 
-    Opaque pixels on a checkerboard, never partial alpha: the sheet is read
-    at 16px on the board and blown up in the cut-in, and a soft alpha edge is
-    a halo at one end and a grey stain at the other (the units' contact
-    shadows are the same dither for the same reason). Half the pixels missing
-    is what lets the ground the board paints underneath read through.
+    Opaque pixels, never partial alpha: the sheet is read at 16px on the board
+    and blown up in the cut-in, and a soft alpha edge is a halo at one end and
+    a grey stain at the other.
+
+    It used to be a 1px checkerboard, so that half the pixels missing let the
+    ground the board paints underneath read through. That argument only ever
+    held at one sampling ratio: the board draws this 64px cell onto a 16px
+    grid with nearest filtering at whole zoom rungs 1..5, keeping one source
+    pixel in 4/z, and a 1px parity is a different picture at every one of them
+    — solid zoomed out, thin at the default rung, and loose dots at rung 4
+    where the art is 1:1, which is the stippled fringe a city wore. The units'
+    cast shadow went solid for the same measurement (`voxel._shadow_ellipse`);
+    this is the same contract, on the drawer that had been left behind.
     """
     px = cell.load()
     sp = sprite.load()
@@ -495,7 +503,7 @@ def _drop_shadow(cell: Image.Image, sprite: Image.Image, x0: int, y0: int) -> No
             if sp[xx, yy][3] == 0:
                 continue
             tx, ty = x0 + xx + dx, y0 + yy + dy
-            if not (0 <= tx < CELL and 0 <= ty < CELL) or (tx + ty) % 2:
+            if not (0 <= tx < CELL and 0 <= ty < CELL):
                 continue
             px[tx, ty] = (*SHADOW, 255)
 
