@@ -25,6 +25,7 @@ from spritegen import atlas, autotile, palette, terrain
 from spritegen.autotile import E, N, S, W
 from spritegen.palette import (
     FACTIONS,
+    MID_CONTOUR,
     MID_FACTION,
     RAMPS,
     S_BODY,
@@ -74,6 +75,16 @@ def opaque_pixels(img) -> list[tuple[int, int, int]]:
         for x in range(img.width)
         if px[x, y][3] > 200
     ]
+
+
+def _touches_transparency(px, w: int, h: int, x: int, y: int) -> bool:
+    """Is this pixel on the silhouette? Diagonals and the frame edge count."""
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            nx, ny = x + dx, y + dy
+            if not (0 <= nx < w and 0 <= ny < h) or px[nx, ny][3] != 255:
+                return True
+    return False
 
 
 def share_above(pixels, level: float) -> float:
@@ -1340,6 +1351,38 @@ class IndexedPalette(unittest.TestCase):
             with self.subTest(frame=frame):
                 alpha = {p[3] for p in self._pixels(atlas.build_units_atlas(frame))}
                 self.assertEqual(alpha - {0, 255}, set())
+
+    def test_no_plane_touches_the_ground(self):
+        """The outer boundary is S0's, absolutely — round-9 contour precedence.
+
+        The contour halo and the rim were two passes with no order between
+        them, so a stair step's inner corner met the ground with whatever
+        plane drew it. On a long top-facing edge — the apc's whole roof line
+        — that is the outline broken every other pixel, and against plains or
+        shoal the silhouette goes with it.
+
+        Diagonals count: a corner touching the tile at a point is on the
+        silhouette however few of its sides face out, which is exactly the
+        set the halo cannot reach. Both frames, because the ambient frame
+        moves rotors and hulls into new corners.
+        """
+        for fac in FACTIONS:
+            for uid in ATLAS_ORDER:
+                for frame in (0, 1):
+                    sprite = render_indexed(build_model(uid, frame), fac)
+                    img = sprite.image
+                    px = img.load()
+                    w, h = img.size
+                    naked = [
+                        (x, y)
+                        for y in range(h)
+                        for x in range(w)
+                        if px[x, y][3] == 255
+                        and sprite.mid(x, y) != MID_CONTOUR
+                        and _touches_transparency(px, w, h, x, y)
+                    ]
+                    with self.subTest(faction=fac.key, unit=uid, frame=frame):
+                        self.assertEqual(naked, [])
 
     def test_no_isolated_pixel_outside_the_dither(self):
         """Spec item 10: a pixel differing from all four of its orthogonal

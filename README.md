@@ -177,7 +177,18 @@ that pipeline's paste step can be pointed at this art instead.
      lower-right edges the unit has to separate from the ground on, S0
      between two materials whose values are too close to read apart, and a
      despeckle pass folding lone pixels into the plane they were nearly part
-     of. It also returns a per-pixel material id.
+     of. It also returns a per-pixel material id. Those passes are **ordered,
+     and the contour speaks last**: the outer boundary is S0's absolutely —
+     no pixel that touches transparency, diagonals included, may carry
+     anything else, so the halo is followed by a claim over the stair corners
+     it cannot reach, and the despeckle may only ever snap one S0 to another
+     out there. A rim caught on the boundary is **moved one pixel inboard**
+     onto the top plane it leads rather than deleted. Unordered, they left
+     the rim and the top plane meeting the ground every other pixel along a
+     long top-facing edge — the apc's whole roof line — which is an outline
+     that dots out and a silhouette that goes with it on plains and shoal.
+     The alpha never moves: the silhouette is the shape the model drew, and
+     only the colour under it changes.
    - `render` (terrain and buildings) is the older path: three shaded face
      tones per material, fractional occlusion, hash dither on broad tops and
      a 1px per-part outline.

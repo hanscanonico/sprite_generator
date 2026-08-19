@@ -231,6 +231,30 @@ def render_indexed(
     return IndexedSprite(img, mids)
 
 
+_NEIGHBOURS4 = ((0, -1), (-1, 0), (1, 0), (0, 1))
+_NEIGHBOURS8 = _NEIGHBOURS4 + ((-1, -1), (1, -1), (-1, 1), (1, 1))
+
+
+def _exposed(px, w: int, h: int) -> list[bool]:
+    """Every opaque pixel that touches transparency, diagonals included.
+
+    The outer boundary is what the unit is read against, so it is defined the
+    way an eye reads it — a step's inner corner is on the silhouette even
+    though no side of it faces out.
+    """
+    out = [False] * (w * h)
+    for y in range(h):
+        for x in range(w):
+            if px[x, y][3] != 255:
+                continue
+            for dx, dy in _NEIGHBOURS8:
+                nx, ny = x + dx, y + dy
+                if not (0 <= nx < w and 0 <= ny < h) or px[nx, ny][3] != 255:
+                    out[y * w + x] = True
+                    break
+    return out
+
+
 def _despeckle(img: Image.Image, mids: bytearray) -> None:
     """Fold every lone pixel into the plane it is most like.
 
@@ -245,9 +269,16 @@ def _despeckle(img: Image.Image, mids: bytearray) -> None:
     left, so it needs a second pass to settle. Snapping against the live
     image settles in one, because a pixel that was snapped to a neighbour
     has given that neighbour a match and neither can move again.
+
+    On the outer boundary it may only snap S0 to S0. The contour is the last
+    word on every pixel that meets the ground (`_claim_outer_boundary`), so a
+    lone pixel out there settles between neighbouring contours or stays as it
+    is; folding it into the plane behind it is what left a rim standing naked
+    against a light tile.
     """
     px = img.load()
     w, h = img.size
+    exposed = _exposed(px, w, h)
     for y in range(h):
         for x in range(w):
             here = px[x, y]
@@ -261,6 +292,10 @@ def _despeckle(img: Image.Image, mids: bytearray) -> None:
                         neigh.append((c, ny * w + nx))
             if not neigh or any(c[:3] == here[:3] for c, _ in neigh):
                 continue
+            if exposed[y * w + x]:
+                neigh = [n for n in neigh if mids[n[1]] == MID_CONTOUR]
+                if not neigh:
+                    continue
             level = luminance(here[:3])
             best, src = min(neigh, key=lambda n: abs(luminance(n[0][:3]) - level))
             px[x, y] = best
@@ -274,6 +309,12 @@ def _contour(img: Image.Image, mids: bytearray, ramps: list[Ramp | None]) -> Non
     shared black, which reads as a sticker edge — and the lower-right edges,
     the ones that have to separate the unit from the ground it stands on,
     carry a second pixel.
+
+    The halo alone only answers for the pixels a plane faces out of; the
+    corner of every stair step still met the ground with whatever plane drew
+    it, which on a long top-facing edge is a dotted line of top and rim
+    breaking the outline every other pixel. `_claim_outer_boundary` closes
+    that, and is what makes the contour the last pass to speak.
     """
     px = img.load()
     w, h = img.size
@@ -312,6 +353,54 @@ def _contour(img: Image.Image, mids: bytearray, ramps: list[Ramp | None]) -> Non
         idx = yy * w + xx
         mids[idx] = MID_CONTOUR
         ramps[idx] = ramp
+    _claim_outer_boundary(px, mids, ramps, w, h)
+
+
+def _claim_outer_boundary(
+    px, mids: bytearray, ramps: list[Ramp | None], w: int, h: int
+) -> None:
+    """The outer boundary is S0's, absolutely: no plane touches the ground.
+
+    Claiming the pixel rather than growing the halo into the gap keeps the
+    silhouette the shape the model drew — the alpha does not move, only the
+    colour under it — so what changes is that the outline reads as one line
+    instead of a dotted one.
+
+    A rim caught out there is MOVED, not deleted: it steps one pixel inboard
+    onto the top plane it leads, because a rim is the lit edge of that plane
+    and the plane is still lit one pixel in. Every other claimed plane simply
+    gives up the pixel; the outline is what the pixel is for.
+    """
+    exposed = _exposed(px, w, h)
+    for yy in range(h):
+        for xx in range(w):
+            i = yy * w + xx
+            if not exposed[i] or mids[i] == MID_CONTOUR:
+                continue
+            ramp = ramps[i]
+            if ramp is None:
+                continue
+            if mids[i] == MID_FACTION and px[xx, yy][:3] == ramp[S_RIM]:
+                _step_rim_inboard(px, mids, exposed, w, h, xx, yy, ramp)
+            c = ramp[S_CONTOUR]
+            px[xx, yy] = (c[0], c[1], c[2], 255)
+            mids[i] = MID_CONTOUR
+
+
+def _step_rim_inboard(
+    px, mids: bytearray, exposed: list[bool], w: int, h: int, x: int, y: int, ramp: Ramp
+) -> None:
+    """Light the first inboard top-plane pixel this rim can retreat onto."""
+    for dx, dy in _NEIGHBOURS4:
+        nx, ny = x + dx, y + dy
+        if not (0 <= nx < w and 0 <= ny < h):
+            continue
+        j = ny * w + nx
+        if exposed[j] or mids[j] != MID_FACTION or px[nx, ny][:3] != ramp[S_TOP]:
+            continue
+        c = ramp[S_RIM]
+        px[nx, ny] = (c[0], c[1], c[2], 255)
+        return
 
 
 _INTERIOR_STEP = 36.0  # under ~2 ramp slots of value
