@@ -740,16 +740,29 @@ def _outline(img: Image.Image) -> None:
         px[xx, yy] = (c[0], c[1], c[2], 255)
 
 
+# The cell's vertical landmarks, each stated as a height ABOVE its bottom
+# edge: the ground line a land or sea unit stands on, the higher line an
+# aircraft hovers at, and the ground its shadow falls on.
+GROUND_BOTTOM = 9
+AIR_BOTTOM = 20
+AIR_SHADOW_BOTTOM = 6
+
+
 def compose_cell(
     sprite: Image.Image,
     kind: str = "land",
-    cell: int = 64,
+    cell: tuple[int, int] = (64, 64),
     bottom: int | None = None,
     dx: int = 0,
     wake: bool = False,
     shadow: bool = True,
 ) -> Image.Image:
     """Center a rendered sprite on a transparent atlas cell with its shadow.
+
+    `cell` is (width, height), and every vertical landmark is measured up
+    from the cell's BOTTOM edge — the ground line is the bottom of the tile
+    the unit occupies. A taller cell therefore adds sky above the sprite and
+    moves nothing, which is what lets a silhouette overflow its tile upward.
 
     Shadow policy (sprite review round 3): land units get a tight hard
     CONTACT shadow — without one they float over the tile — and the airborne
@@ -775,13 +788,12 @@ def compose_cell(
     waterline foam is why that matters: it is placed against the composed
     cell's own spans, so a shadow that was never drawn would move the foam.
     """
-    out = Image.new("RGBA", (cell, cell), (0, 0, 0, 0))
+    cell_w, cell_h = cell
+    out = Image.new("RGBA", (cell_w, cell_h), (0, 0, 0, 0))
     w, h = sprite.size
-    if kind == "air":
-        bottom = bottom if bottom is not None else 44
-    else:
-        bottom = bottom if bottom is not None else 55
-    x0 = (cell - w) // 2 + dx
+    if bottom is None:
+        bottom = cell_h - (AIR_BOTTOM if kind == "air" else GROUND_BOTTOM)
+    x0 = (cell_w - w) // 2 + dx
     y0 = bottom - h
 
     cast: list[tuple[int, int]] = []
@@ -789,13 +801,15 @@ def compose_cell(
         # Ships sit IN the water: a flat displacement shading right under
         # the hull instead of a floating blob, then foam at the waterline.
         rx = max(6, int(w * 0.42))
-        cast = _shadow_ellipse(out, cell // 2 + dx, bottom - 1, rx, max(2, rx // 5))
+        cast = _shadow_ellipse(out, cell_w // 2 + dx, bottom - 1, rx, max(2, rx // 5))
     elif kind == "air":
         rx = max(6, int(w * 0.30))
-        cast = _shadow_ellipse(out, cell // 2 + dx + 4, 58, rx, max(2, rx // 3))
+        cast = _shadow_ellipse(
+            out, cell_w // 2 + dx + 4, cell_h - AIR_SHADOW_BOTTOM, rx, max(2, rx // 3)
+        )
     elif kind == "land":
         rx = max(4, int(w * 0.34))
-        cast = _shadow_ellipse(out, cell // 2 + dx, bottom - 1, rx, max(2, rx // 4))
+        cast = _shadow_ellipse(out, cell_w // 2 + dx, bottom - 1, rx, max(2, rx // 4))
     place_in_cell(out, sprite, x0, y0)
     if kind == "sea":
         if wake:

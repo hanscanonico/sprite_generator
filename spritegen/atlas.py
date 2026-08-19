@@ -1,6 +1,6 @@
 """Atlas assembly and per-cell export, matching grid_commanders' contracts.
 
-units_atlas.png   — 18 columns x 5 rows of 64px RGBA cells (1152x320),
+units_atlas.png   — 18 columns x 5 rows of CELL_W x CELL_H RGBA cells,
                     columns in data/units atlas_col order, rows in
                     SideIdentity order (neutral, meridian, aurora, iron,
                     verdant).
@@ -8,15 +8,15 @@ units_atlas_figures.png
                   — the same sheet with the tile's cast shadow left off,
                     for the cut-ins, which draw the art at 1:1 over a ground
                     plane of their own (see compose_cell's `shadow`).
-terrain_atlas.png — 14 columns x 5 rows of 64px RGBA cells (896x320),
+terrain_atlas.png — 14 columns x 5 rows of terrain.CELL square RGBA cells,
                     columns in tools/generate_tiles.gd order; non-property
                     columns repeat one opaque tile down all rows, property
                     columns are faction-tinted per row and transparent
                     around the building, for the board to paint under.
-unit cells        — <unit id>_<team>.png, 64x64 RGBA, the inputs
-                    tools/paste_unit_sprites.gd consumes.
-building cells    — <building>_<team>.png, 64x64 RGBA transparent-backed
-                    sprites for assets/sprites/iso_buildings.
+unit cells        — <unit id>_<team>.png, one units-atlas cell each, the
+                    inputs tools/paste_unit_sprites.gd consumes.
+building cells    — <building>_<team>.png, one terrain cell each, RGBA
+                    transparent-backed sprites for assets/sprites/iso_buildings.
 """
 
 from __future__ import annotations
@@ -28,12 +28,18 @@ from .palette import FACTIONS, Faction
 from .units import ATLAS_ORDER, UNITS, WAKE, build_model
 from .voxel import compose_cell, place_in_cell, render, render_indexed
 
-CELL = 64
+# The units atlas's cell. It is square today; CELL_H is separate because a
+# silhouette that overflows its tile needs a taller-than-wide cell, and
+# compose_cell anchors everything to the cell's bottom edge so the extra
+# height is sky above the sprite.
+CELL_W = 64
+CELL_H = 64
 # Ambient animation frame B: air and sea units ride one voxel-scale pixel
 # higher (their shadows stay put, so the bob reads as hover/swell), and the
 # copters' rotor discs sweep 45 degrees inside build_model. Land units are
-# byte-identical between frames — they are parked on the ground.
-_BOB_BOTTOM = {"air": 43, "sea": 54}
+# byte-identical between frames — they are parked on the ground. Stated as
+# heights above the cell's bottom edge, like compose_cell's own landmarks.
+_BOB_BOTTOM = {"air": 21, "sea": 10}
 
 
 def unit_cell(
@@ -42,33 +48,43 @@ def unit_cell(
     """One atlas cell. Units render through the indexed ramps; terrain and
     buildings keep the shading renderer until their own pass moves them."""
     kind = UNITS[uid][1]
-    bottom = _BOB_BOTTOM.get(kind) if frame == 1 else None
+    bob = _BOB_BOTTOM.get(kind) if frame == 1 else None
     sprite = render_indexed(build_model(uid, frame), fac).image
-    return compose_cell(sprite, kind, bottom=bottom, wake=uid in WAKE, shadow=shadow)
+    return compose_cell(
+        sprite,
+        kind,
+        cell=(CELL_W, CELL_H),
+        bottom=None if bob is None else CELL_H - bob,
+        wake=uid in WAKE,
+        shadow=shadow,
+    )
 
 
 def build_units_atlas(frame: int = 0, shadow: bool = True) -> Image.Image:
     atlas = Image.new(
-        "RGBA", (len(ATLAS_ORDER) * CELL, len(FACTIONS) * CELL), (0, 0, 0, 0)
+        "RGBA", (len(ATLAS_ORDER) * CELL_W, len(FACTIONS) * CELL_H), (0, 0, 0, 0)
     )
     for row, fac in enumerate(FACTIONS):
         for col, uid in enumerate(ATLAS_ORDER):
             atlas.alpha_composite(
-                unit_cell(uid, fac, frame, shadow), (col * CELL, row * CELL)
+                unit_cell(uid, fac, frame, shadow), (col * CELL_W, row * CELL_H)
             )
     return atlas
 
 
 def build_terrain_atlas() -> Image.Image:
-    atlas = Image.new("RGBA", (len(terrain.TERRAIN_ORDER) * CELL, len(FACTIONS) * CELL))
+    tile_px = terrain.CELL
+    atlas = Image.new(
+        "RGBA", (len(terrain.TERRAIN_ORDER) * tile_px, len(FACTIONS) * tile_px)
+    )
     for col, tid in enumerate(terrain.TERRAIN_ORDER):
         if tid in terrain.PROPERTY:
             for row, fac in enumerate(FACTIONS):
-                atlas.paste(terrain.tile(tid, fac), (col * CELL, row * CELL))
+                atlas.paste(terrain.tile(tid, fac), (col * tile_px, row * tile_px))
         else:
             one = terrain.tile(tid, FACTIONS[0])
             for row in range(len(FACTIONS)):
-                atlas.paste(one, (col * CELL, row * CELL))
+                atlas.paste(one, (col * tile_px, row * tile_px))
     return atlas
 
 
@@ -78,7 +94,7 @@ def building_cell(bid: str, fac: Faction) -> Image.Image:
     # model_for, not BUILDINGS[bid]: the neutral row swaps hue-carrying
     # materials for greys, and the exported cells must match the tiles.
     sprite = render(buildings.model_for(bid, fac), fac)
-    out = Image.new("RGBA", (CELL, CELL), (0, 0, 0, 0))
+    out = Image.new("RGBA", (terrain.CELL, terrain.CELL), (0, 0, 0, 0))
     cx, bottom = terrain.PROPERTY_ANCHOR[bid]
     place_in_cell(out, sprite, cx - sprite.width // 2, bottom - sprite.height)
     return out
@@ -148,7 +164,7 @@ _DEMO_UNITS = [
 def build_demo() -> Image.Image:
     rows = [[_DEMO_ALIAS.get(t, t) for t in r.split()] for r in _DEMO_MAP]
     h, w = len(rows), len(rows[0])
-    img = Image.new("RGBA", (w * CELL, h * CELL))
+    img = Image.new("RGBA", (w * terrain.CELL, h * terrain.CELL))
     fac_for_prop = {
         (7, 1): 2,
         (8, 1): 2,
@@ -228,10 +244,21 @@ def build_demo() -> Image.Image:
                 # A property ships as a transparent overlay, so the ground
                 # under it is the board's to paint — the default ground,
                 # which is what these cells used to bake.
-                img.paste(terrain.tile("plains", FACTIONS[0]), (x * CELL, y * CELL))
-                img.alpha_composite(tile, (x * CELL, y * CELL))
+                img.paste(
+                    terrain.tile("plains", FACTIONS[0]),
+                    (x * terrain.CELL, y * terrain.CELL),
+                )
+                img.alpha_composite(tile, (x * terrain.CELL, y * terrain.CELL))
             else:
-                img.paste(tile.convert("RGBA"), (x * CELL, y * CELL))
+                img.paste(tile.convert("RGBA"), (x * terrain.CELL, y * terrain.CELL))
+    # A unit cell is anchored by its ground line, so it is placed against the
+    # BOTTOM of its tile: a taller cell hangs off the top, over the tile behind.
     for uid, fac_row, x, y in _DEMO_UNITS:
-        img.alpha_composite(unit_cell(uid, FACTIONS[fac_row]), (x * CELL, y * CELL))
+        img.alpha_composite(
+            unit_cell(uid, FACTIONS[fac_row]),
+            (
+                x * terrain.CELL + (terrain.CELL - CELL_W) // 2,
+                (y + 1) * terrain.CELL - CELL_H,
+            ),
+        )
     return img
