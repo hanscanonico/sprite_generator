@@ -131,6 +131,16 @@ def _rect(img: Image.Image, x0: int, y0: int, w: int, h: int, c: RGB) -> None:
             px[xx, yy] = (*c, 255)
 
 
+def _wrap_rect(img: Image.Image, x0: int, y0: int, w: int, h: int, c: RGB) -> None:
+    """`_rect` around the tile's edge instead of off it. A prop moved by a phase
+    offset has to keep its area, or a phase would be a thinner field rather than
+    a differently arranged one."""
+    px = img.load()
+    for yy in range(y0, y0 + h):
+        for xx in range(x0, x0 + w):
+            px[xx % CELL, yy % CELL] = (*c, 255)
+
+
 def _paste_prop(tile: Image.Image, prop: Image.Image, cx: int, bottom: int) -> None:
     place_in_cell(tile, prop, cx - prop.width // 2, bottom - prop.height)
 
@@ -155,31 +165,49 @@ def road() -> Image.Image:
     return t
 
 
-def plains() -> Image.Image:
-    t = _ground(GRASS, PLAINS_SALT)
-    # grass tufts: a dark check with a light blade, like the old speckles
-    # but drawn as 3px clusters
-    spots = (
-        (10, 12),
-        (34, 8),
-        (52, 22),
-        (18, 30),
-        (42, 38),
-        (8, 44),
-        (28, 52),
-        (54, 48),
-        (24, 20),
-        (46, 12),
-        (14, 56),
-        (38, 24),
-    )
-    for i, (sx, sy) in enumerate(spots):
-        _rect(t, sx, sy, 3, 2, GRASS_DARK)
-        _rect(t, sx + (i % 2), sy - 1, 1, 1, _lit(GRASS, 0.18))
-    # a couple of tiny wildflowers so big plains fields don't tile dead flat
-    for fx, fy in ((30, 36), (50, 40)):
-        _rect(t, fx, fy, 1, 1, SNOW)
-        _rect(t, fx + 1, fy, 1, 1, (214, 163, 57))
+# Grass tufts: a dark check with a light blade, like the old speckles but drawn
+# as 3px clusters. Followed by a couple of tiny wildflowers, so a big field does
+# not tile dead flat.
+_TUFTS = (
+    (10, 12),
+    (34, 8),
+    (52, 22),
+    (18, 30),
+    (42, 38),
+    (8, 44),
+    (28, 52),
+    (54, 48),
+    (24, 20),
+    (46, 12),
+    (14, 56),
+    (38, 24),
+)
+_WILDFLOWERS = ((30, 36), (50, 40))
+
+# Phase offsets for plains — the sea's rule (SEA_PHASES below) applied to the
+# ground most of a board is made of. Each entry is (grain salt, prop dx, dy): the
+# same field with its grain in a different phase and its props stood elsewhere,
+# so what repeats over a stretch of it is no longer one tile. Same count and same
+# tones every phase, which is what keeps the field's value read a phase apart.
+# Phase 0 is the atlas column, so a board that has not adopted the sheet is
+# unchanged and adoption is additive.
+PLAINS_PHASES: tuple[tuple[int, int, int], ...] = (
+    (PLAINS_SALT, 0, 0),
+    (11, 27, 19),
+    (19, 45, 37),
+)
+
+
+def plains(phase: int = 0) -> Image.Image:
+    grain, dx, dy = PLAINS_PHASES[phase]
+    t = _ground(GRASS, grain)
+    for i, (sx, sy) in enumerate(_TUFTS):
+        x, y = sx + dx, sy + dy
+        _wrap_rect(t, x, y, 3, 2, GRASS_DARK)
+        _wrap_rect(t, x + (i % 2), y - 1, 1, 1, _lit(GRASS, 0.18))
+    for fx, fy in _WILDFLOWERS:
+        _wrap_rect(t, fx + dx, fy + dy, 1, 1, SNOW)
+        _wrap_rect(t, fx + dx + 1, fy + dy, 1, 1, (214, 163, 57))
     return t
 
 

@@ -23,6 +23,7 @@ from .terrain import (
     E,
     GRASS_DARK,
     N,
+    PLAINS_PHASES,
     ROAD,
     ROAD_DARK,
     S,
@@ -421,6 +422,16 @@ def variant_sheet(builder, cols: int = 4) -> Image.Image:
 def bridge_sheet() -> Image.Image:
     """Both deck orientations: E-W over a north-south river, then N-S."""
     return sheet([bridge_tile(True), bridge_tile(False)], 2)
+
+
+def plains_sheet() -> Image.Image:
+    """The field's phase variants, left to right, phase 0 first.
+
+    Same sheet contract as the sea's and for the same reason: what a field of
+    one tile repeats at is the tile, so the fix is more than one tile and a rule
+    for choosing between them. Phase 0 is the atlas plains column byte for byte.
+    """
+    return sheet([plains(phase) for phase in range(len(PLAINS_PHASES))], len(PLAINS_PHASES))
 
 
 def sea_sheet() -> Image.Image:

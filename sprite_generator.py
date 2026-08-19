@@ -181,6 +181,7 @@ def main() -> None:
     )
     _write(autotile.bridge_sheet(), args.out / "autotiles" / "bridges.png")
     _write(autotile.sea_sheet(), args.out / "autotiles" / "sea.png")
+    _write(autotile.plains_sheet(), args.out / "autotiles" / "plains.png")
 
     print("rendering previews")
     _write(atlas.preview(units_atlas, 2), args.out / "preview_units.png")

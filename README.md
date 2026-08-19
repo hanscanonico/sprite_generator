@@ -168,6 +168,7 @@ python3 -m venv .venv
 | `autotiles/{roads,rivers,coast,shoals,woods}.png` | 16-variant connection sheets (see below) |
 | `autotiles/bridges.png` | the two bridge deck orientations, E-W then N-S |
 | `autotiles/sea.png` | the three sea phase variants, phase 0 first (see below) |
+| `autotiles/plains.png` | the three plains phase variants, phase 0 first (see below) |
 
 `units_atlas_figures.png` exists because a figure standing on a drawn ground
 already has a shadow. The tile shadow grounds the cell against the board's
@@ -204,7 +205,8 @@ demo map composes from these, which is why its roads connect and its island
 has a shoreline; the atlases themselves are
 unchanged drop-ins.
 
-`autotiles/sea.png` is the one sheet that is not a connection set: it is the
+`autotiles/sea.png` and `autotiles/plains.png` are the sheets that are not
+connection sets. The sea's is the
 same open water in three **phases**, laid out left to right with a 2px gutter
 like every other sheet. A field of sea reads visibly row-aligned however the
 glints are spread inside one tile, because what lines up is the repeat — so
@@ -214,6 +216,14 @@ coordinate into `0..2`. **Phase 0 is the terrain atlas's sea column byte for
 byte**, so a board that knows nothing about this sheet is unchanged and a
 board that adopts it keeps every cell it does not re-key; nothing has to move
 on the day the game registers the sheet.
+
+`autotiles/plains.png` is that rule on the ground most of a board is made of,
+and it is phased the same way: three tiles, phase 0 the atlas plains column byte
+for byte, chosen by the same coordinate hash. A phase moves the grain's salt and
+stands the tufts and wildflowers somewhere else — same count, same tones, wrapped
+around the tile rather than off it — because plains is the reference ground most
+contrast pairs are read against, so a phase may vary the field's texture and not
+its value.
 
 Note the game's `make tiles` rebuilds its atlases from its own PixVoxel
 pipeline and would overwrite installed atlases; the per-cell exports exist so
