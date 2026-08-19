@@ -114,8 +114,10 @@ class AtlasContract(unittest.TestCase):
 
     def test_units_atlas_is_18_by_5_rgba_cells(self):
         img = atlas.build_units_atlas()
-        self.assertEqual(img.size, (len(ATLAS_ORDER) * 64, len(FACTIONS) * 64))
-        self.assertEqual(img.size, (1152, 320))
+        self.assertEqual(
+            img.size, (len(ATLAS_ORDER) * atlas.CELL_W, len(FACTIONS) * atlas.CELL_H)
+        )
+        self.assertEqual(img.size, (1152, 480))
         self.assertEqual(img.mode, "RGBA")
 
     def test_terrain_atlas_is_14_by_5_rgba_cells(self):
@@ -130,7 +132,7 @@ class AtlasContract(unittest.TestCase):
     def test_every_atlas_row_renders_its_own_faction(self):
         img = atlas.build_units_atlas()
         rows = [
-            img.crop((0, r * 64, img.width, r * 64 + 64)).tobytes()
+            img.crop((0, r * atlas.CELL_H, img.width, (r + 1) * atlas.CELL_H)).tobytes()
             for r in range(len(FACTIONS))
         ]
         self.assertEqual(len(set(rows)), len(FACTIONS))
@@ -150,8 +152,8 @@ class FigureSheet(unittest.TestCase):
         board = atlas.build_units_atlas().load()
         figures = atlas.build_units_atlas(shadow=False).load()
         removed = 0
-        for y in range(len(FACTIONS) * 64):
-            for x in range(len(ATLAS_ORDER) * 64):
+        for y in range(len(FACTIONS) * atlas.CELL_H):
+            for x in range(len(ATLAS_ORDER) * atlas.CELL_W):
                 if board[x, y] == figures[x, y]:
                     continue
                 # The only legal difference: an opaque shadow pixel is gone.
@@ -165,7 +167,12 @@ class FigureSheet(unittest.TestCase):
         figures = atlas.build_units_atlas(shadow=False)
         for row, fac in enumerate(FACTIONS):
             for col, uid in enumerate(ATLAS_ORDER):
-                box = (col * 64, row * 64, col * 64 + 64, row * 64 + 64)
+                box = (
+                    col * atlas.CELL_W,
+                    row * atlas.CELL_H,
+                    (col + 1) * atlas.CELL_W,
+                    (row + 1) * atlas.CELL_H,
+                )
                 self.assertNotEqual(
                     board.crop(box).tobytes(),
                     figures.crop(box).tobytes(),
@@ -1426,8 +1433,8 @@ class CastShadow(unittest.TestCase):
             found.append(
                 [
                     (x, y)
-                    for y in range(64)
-                    for x in range(64)
+                    for y in range(atlas.CELL_H)
+                    for x in range(atlas.CELL_W)
                     if px[x, y][3] == 255 and px[x, y][:3] == self.SHADOW
                 ]
             )
@@ -1471,9 +1478,10 @@ class Silhouette(unittest.TestCase):
 
     def _silhouette(self, uid: str) -> set[tuple[int, int]]:
         cell = atlas.unit_cell(uid, faction_by_key("neutral")).convert("RGBA")
-        small = cell.resize((32, 32), Image.NEAREST)
+        w, h = atlas.CELL_W // 2, atlas.CELL_H // 2
+        small = cell.resize((w, h), Image.NEAREST)
         px = small.load()
-        return {(x, y) for y in range(32) for x in range(32) if px[x, y][3] > 200}
+        return {(x, y) for y in range(h) for x in range(w) if px[x, y][3] > 200}
 
     def test_no_two_units_share_a_silhouette(self):
         shapes = {uid: self._silhouette(uid) for uid in ATLAS_ORDER}

@@ -20,7 +20,7 @@ from spritegen.palette import FACTIONS
 from spritegen.units import ATLAS_ORDER, UNITS, WAKE, build_model
 from spritegen.voxel import compose_cell, place_in_cell, render_indexed
 
-TALLER = 96
+TALLER = atlas.CELL_H + 32
 
 
 def _sprite(uid: str):

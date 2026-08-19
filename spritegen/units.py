@@ -186,70 +186,72 @@ def recon() -> Model:
 
 
 def tank() -> Model:
-    """MBT: the low one — flattened turret, hull-hugging long gun (cannon)."""
+    """MBT: deep-chested — tall running gear, a turret raised on a full ring,
+    hull-hugging long gun (cannon)."""
     m = Model()
-    _track(m, 0, 2, 0, 13)
-    _track(m, 9, 11, 0, 13)
+    _track(m, 0, 2, 0, 13, 2)
+    _track(m, 9, 11, 0, 13, 2)
     # hull in desaturated armour; the turret crown carries the team color
-    m.box(0, 11, 1, 12, 2, 3, "hull")
-    m.box(1, 10, 13, 13, 2, 3, "hull")
-    m.box(2, 9, 14, 14, 2, 2, "hull_lt")  # glacis lip
-    m.box(2, 9, 13, 13, 3, 3, "hull_lt")  # glacis top
+    m.box(0, 11, 1, 12, 3, 5, "hull")
+    m.box(1, 10, 13, 13, 3, 5, "hull")
+    m.box(2, 9, 14, 14, 3, 4, "hull_lt")  # glacis lip
+    m.box(2, 9, 13, 13, 5, 5, "hull_lt")  # glacis top
     # rear deck vents and exhausts
-    m.box(2, 9, 1, 1, 3, 3, "hull_dk")
-    m.box(2, 9, 3, 3, 3, 3, "hull_dk")
-    m.box(0, 1, 0, 0, 2, 3, "hull_dk")
-    # flattened turret: one low ring under a team crown — the lowest
-    # profile of the land roster, so the barrel line reads alone
-    m.box(3, 8, 4, 9, 4, 4, "hull")
-    m.chamfer(3, 8, 4, 9, 4, 4)
-    m.box(4, 7, 5, 8, 5, 5, "body")
-    m.chamfer(4, 7, 5, 8, 5, 5)
-    m.box(4, 5, 5, 6, 6, 6, "body_dk")  # commander cupola
-    m.set(6, 8, 5, "body_lt")  # loader hatch glint
-    m.box(4, 7, 4, 4, 5, 5, "hull_dk")  # stowage bustle
-    # low mantlet and a gun grown two voxels — the unmistakable barrel line
-    m.box(4, 7, 10, 10, 4, 4, "hull_dk")
-    m.box(5, 6, 10, 19, 4, 4, "gunmetal")
-    m.box(5, 6, 14, 14, 4, 4, "gunmetal_dk")  # bore evacuator
-    m.box(4, 7, 19, 19, 4, 4, "gunmetal_dk")  # muzzle brake
-    m.box(5, 6, 20, 20, 4, 4, "bore")
+    m.box(2, 9, 1, 1, 5, 5, "hull_dk")
+    m.box(2, 9, 3, 3, 5, 5, "hull_dk")
+    m.box(0, 1, 0, 0, 3, 5, "hull_dk")
+    # turret on a full armour ring under a team crown — the mass the cell's
+    # headroom is for, so the barrel line rides high over the deck
+    m.box(3, 8, 4, 9, 6, 7, "hull")
+    m.chamfer(3, 8, 4, 9, 6, 7)
+    m.box(4, 7, 5, 8, 8, 9, "body")
+    m.chamfer(4, 7, 5, 8, 8, 9)
+    m.box(4, 5, 5, 6, 10, 10, "body_dk")  # commander cupola
+    m.set(6, 8, 8, "body_lt")  # loader hatch glint
+    m.box(4, 7, 4, 4, 8, 8, "hull_dk")  # stowage bustle
+    # mantlet and a gun grown two voxels — the unmistakable barrel line
+    m.box(4, 7, 10, 10, 6, 7, "hull_dk")
+    m.box(5, 6, 10, 19, 7, 7, "gunmetal")
+    m.box(5, 6, 14, 14, 7, 7, "gunmetal_dk")  # bore evacuator
+    m.box(4, 7, 19, 19, 7, 7, "gunmetal_dk")  # muzzle brake
+    m.box(5, 6, 20, 20, 7, 7, "bore")
     return m
 
 
 def md_tank() -> Model:
-    """Heavy tank: wider, taller, skirted tracks, long heavy gun (cannon)."""
+    """Heavy tank: wider, taller, skirted tracks, long heavy gun (cannon).
+    The tallest thing the land roster puts on a tile."""
     m = Model()
-    _track(m, 0, 2, 0, 15, 2)
-    _track(m, 10, 12, 0, 15, 2)
+    _track(m, 0, 2, 0, 15, 3)
+    _track(m, 10, 12, 0, 15, 3)
     # hull with armoured side skirts over the tracks
-    m.box(0, 12, 1, 14, 3, 4, "hull")
-    m.box(10, 12, 2, 13, 3, 3, "hull_dk")
-    m.box(0, 2, 2, 13, 3, 3, "hull_dk")
+    m.box(0, 12, 1, 14, 4, 6, "hull")
+    m.box(10, 12, 2, 13, 4, 5, "hull_dk")
+    m.box(0, 2, 2, 13, 4, 5, "hull_dk")
     # stepped heavy glacis
-    m.box(1, 11, 15, 15, 3, 4, "hull")
-    m.box(2, 10, 16, 16, 3, 3, "hull_lt")
-    m.box(2, 10, 15, 15, 4, 4, "hull_lt")
+    m.box(1, 11, 15, 15, 4, 6, "hull")
+    m.box(2, 10, 16, 16, 4, 5, "hull_lt")
+    m.box(2, 10, 15, 15, 6, 6, "hull_lt")
     # rear engine deck and twin exhausts
-    m.box(2, 10, 1, 2, 4, 4, "hull_dk")
-    m.box(1, 2, 0, 0, 3, 4, "hull_dk")
-    m.box(10, 11, 0, 0, 3, 4, "hull_dk")
-    # big turret, two tiers: armour ring, rounded crown; the cupola and
+    m.box(2, 10, 1, 2, 6, 6, "hull_dk")
+    m.box(1, 2, 0, 0, 4, 6, "hull_dk")
+    m.box(10, 11, 0, 0, 4, 6, "hull_dk")
+    # big turret, two deep tiers: armour ring, rounded crown; the cupola and
     # hatch carry the team color
-    m.box(3, 9, 4, 11, 5, 6, "hull")
-    m.chamfer(3, 9, 4, 11, 5, 6)
-    m.box(4, 8, 5, 10, 7, 7, "hull")
-    m.chamfer(4, 8, 5, 10, 7, 7)
-    m.box(4, 8, 4, 4, 7, 7, "hull_dk")  # bustle rack
-    m.box(4, 5, 5, 6, 8, 8, "body_dk")  # cupola
-    m.box(6, 7, 6, 7, 8, 8, "body")  # hatch
+    m.box(3, 9, 4, 11, 7, 9, "hull")
+    m.chamfer(3, 9, 4, 11, 7, 9)
+    m.box(4, 8, 5, 10, 10, 11, "hull")
+    m.chamfer(4, 8, 5, 10, 10, 11)
+    m.box(4, 8, 4, 4, 10, 11, "hull_dk")  # bustle rack
+    m.box(4, 5, 5, 6, 12, 12, "body_dk")  # cupola
+    m.box(6, 7, 6, 7, 12, 12, "body")  # hatch
     # wide mantlet, longer gun with thermal-sleeve rings
-    m.box(4, 8, 12, 12, 5, 7, "hull_dk")
-    m.box(5, 7, 13, 19, 6, 6, "gunmetal")
-    m.box(5, 7, 15, 15, 6, 6, "gunmetal_dk")
-    m.box(5, 7, 17, 17, 6, 6, "gunmetal_dk")
-    m.box(4, 8, 20, 20, 6, 6, "gunmetal_dk")  # muzzle brake
-    m.box(5, 7, 21, 21, 6, 6, "bore")
+    m.box(4, 8, 12, 12, 7, 11, "hull_dk")
+    m.box(5, 7, 13, 19, 10, 10, "gunmetal")
+    m.box(5, 7, 15, 15, 10, 10, "gunmetal_dk")
+    m.box(5, 7, 17, 17, 10, 10, "gunmetal_dk")
+    m.box(4, 8, 20, 20, 10, 10, "gunmetal_dk")  # muzzle brake
+    m.box(5, 7, 21, 21, 10, 10, "bore")
     return m
 
 
@@ -292,31 +294,32 @@ def anti_air() -> Model:
 def artillery() -> Model:
     """SPG: open casemate, howitzer erected past 60 degrees, recoil spade."""
     m = Model()
-    _track(m, 0, 2, 0, 12)
-    _track(m, 8, 10, 0, 12)
-    m.box(0, 10, 1, 12, 2, 3, "hull")
-    m.box(1, 9, 13, 13, 2, 2, "hull_lt")
-    # open casemate: an armoured wall ring around the gun pit, no roof;
+    _track(m, 0, 2, 0, 12, 2)
+    _track(m, 8, 10, 0, 12, 2)
+    m.box(0, 10, 1, 12, 3, 4, "hull")
+    m.box(1, 9, 13, 13, 3, 3, "hull_lt")
+    # open casemate: a deep armoured wall ring around the gun pit, no roof;
     # the team color caps the walls
-    m.box(1, 9, 2, 8, 4, 5, "hull")
-    m.clear(2, 8, 3, 7, 4, 5)
-    m.box(1, 1, 2, 8, 5, 5, "body_dk")  # wall caps
-    m.box(9, 9, 2, 8, 5, 5, "body_dk")
-    m.box(1, 9, 2, 2, 5, 5, "body")
-    m.box(2, 8, 8, 8, 5, 5, "body")
-    m.box(2, 8, 3, 7, 3, 3, "hull_dk")  # pit floor
+    m.box(1, 9, 2, 8, 5, 7, "hull")
+    m.clear(2, 8, 3, 7, 5, 7)
+    m.box(1, 1, 2, 8, 7, 7, "body_dk")  # wall caps
+    m.box(9, 9, 2, 8, 7, 7, "body_dk")
+    m.box(1, 9, 2, 2, 7, 7, "body")
+    m.box(2, 8, 8, 8, 7, 7, "body")
+    m.box(2, 8, 3, 7, 4, 4, "hull_dk")  # pit floor
     # howitzer erected steeply out of the pit: the rising spike no other
-    # land unit carries — two z per y, well clear of the hull mass; the
-    # lower barrel wears a livery recoil sleeve, the muzzle stays steel
-    m.box(4, 6, 4, 6, 4, 5, "hull_dk")  # trunnion pedestal
-    for i in range(5):
+    # land unit carries — two z per y, well clear of the hull mass, and one
+    # step longer than the tile is tall; the lower barrel wears a livery
+    # recoil sleeve, the muzzle stays steel
+    m.box(4, 6, 4, 6, 5, 7, "hull_dk")  # trunnion pedestal
+    for i in range(7):
         paint = "hull_dk" if i < 2 else "gunmetal"
-        m.box(4, 6, 6 + i, 6 + i, 6 + 2 * i, 7 + 2 * i, paint)
-    m.box(3, 7, 11, 11, 15, 15, "gunmetal_dk")  # muzzle brake
-    m.box(4, 6, 11, 11, 16, 16, "bore")
+        m.box(4, 6, 6 + i, 6 + i, 8 + 2 * i, 9 + 2 * i, paint)
+    m.box(3, 7, 13, 13, 21, 21, "gunmetal_dk")  # muzzle brake
+    m.box(4, 6, 13, 13, 22, 22, "bore")
     # recoil spade dug in at the rear
-    m.box(3, 7, 0, 0, 1, 3, "hull_dk")  # spade arms
-    m.box(2, 8, -1, -1, 0, 2, "hull")  # blade
+    m.box(3, 7, 0, 0, 2, 4, "hull_dk")  # spade arms
+    m.box(2, 8, -1, -1, 1, 3, "hull")  # blade
     return m
 
 
@@ -338,17 +341,18 @@ def rockets() -> Model:
     m.set(3, 17, 3, "amber")
     m.set(6, 17, 3, "amber")
     # the launcher: one full-width rectangular slab pitched up toward the
-    # rear, dark like a sealed tube pod; mouths open on the high end
+    # rear at the howitzer's own two z per tile, dark like a sealed tube pod;
+    # mouths open on the high end, which clears the tile the carrier stands on
     for k in range(6):
         y0 = 11 - 2 * k
-        m.box(1, 8, y0, y0 + 1, 4 + k, 5 + k, "hull_dk")
-        m.set(1, y0, 5 + k, "body_dk")  # livery rail down the pod edge
-        m.set(8, y0, 5 + k, "body_dk")
+        m.box(1, 8, y0, y0 + 1, 4 + 2 * k, 5 + 2 * k, "hull_dk")
+        m.set(1, y0, 5 + 2 * k, "body_dk")  # livery rail down the pod edge
+        m.set(8, y0, 5 + 2 * k, "body_dk")
     for x in (2, 4, 6):
-        m.set(x, 1, 10, "bore")
-        m.set(x, 2, 10, "bore")
+        m.set(x, 1, 15, "bore")
+        m.set(x, 2, 15, "bore")
     # solid launch-frame wall carrying the slab's high end
-    m.box(2, 7, 1, 2, 4, 8, "hull_dk")
+    m.box(2, 7, 1, 2, 4, 13, "hull_dk")
     return m
 
 

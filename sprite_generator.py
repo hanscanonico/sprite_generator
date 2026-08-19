@@ -13,7 +13,7 @@ Outputs (under --out, default ./out):
                           for the cut-ins, which draw at 1:1 on their own ground
   terrain_atlas.png       896x320 RGBA — drop-in for assets/tiles/terrain_atlas.png
                           (the five property columns are transparent overlays)
-  units/<id>_<team>.png   64x64 RGBA cells for tools/paste_unit_sprites.gd
+  units/<id>_<team>.png   one units-atlas cell each, for paste_unit_sprites.gd
   iso_buildings/<id>_<team>.png  64x64 RGBA property buildings
   preview_units.png / preview_terrain.png / preview_map.png  review sheets
 """
@@ -51,9 +51,12 @@ def _preview_only(ids: list[str], team: str, zoom: int, out: Path) -> None:
                 f"unknown id '{sid}' (units: {', '.join(ATLAS_ORDER)}; "
                 f"terrain: {', '.join(terrain.TERRAIN_ORDER)})"
             )
-    sheet = Image.new("RGBA", (len(cells) * 66 + 2, 68), (52, 52, 60, 255))
+    pitch = max(c.width for c in cells) + 2
+    tall = max(c.height for c in cells)
+    sheet = Image.new("RGBA", (len(cells) * pitch + 2, tall + 4), (52, 52, 60, 255))
     for i, c in enumerate(cells):
-        sheet.alpha_composite(c.convert("RGBA"), (i * 66 + 2, 2))
+        # Bottom-aligned: a unit cell and a terrain tile share a ground line.
+        sheet.alpha_composite(c.convert("RGBA"), (i * pitch + 2, tall + 2 - c.height))
     sheet = sheet.resize((sheet.width * zoom, sheet.height * zoom), 0)
     _write(sheet, out / "preview_only.png")
 

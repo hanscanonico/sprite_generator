@@ -123,6 +123,33 @@ three lighter tones: solid is indistinguishable from the dither at rungs 1 and
 2, reads as shade rather than dots at rung 4, and every lighter tone loses the
 shadow entirely on road and shoal when zoomed out.
 
+### The unit cell is 64x96, and armour spends the headroom
+
+A tank has to read as heavier than the grass tile it is parked on, and the
+tile is only 64px. So the unit cell is **one tile wide and half a tile
+taller** (`atlas.CELL_W` / `CELL_H`), and `compose_cell` measures every
+vertical landmark — the ground line, the hover line, the air shadow's ground
+— **up from the cell's bottom edge**. The extra 32 rows are therefore sky: an
+untouched model composes in the taller cell byte for byte
+(`tests/test_cell_geometry.py`), and the game anchors the cell by its
+footprint, so what a model draws above the tile hangs over the row behind it.
+
+The **armour family is the first to spend it** — tank, md tank, artillery and
+rockets, all grown upward with their footprints, contact shadows and waterline
+logic untouched. What the growth is, is **mass**: deeper running gear, a
+deeper hull and a turret raised on a full armour ring, plus the two guns that
+elevate (the howitzer one step longer, the rocket rack pitched at the
+howitzer's own two z per tile) which are what actually break the tile's line.
+What it is **not** is fine detail. This projection puts one voxel of height at
+2px, so a turret tall enough to clear a whole tile is a silo rather than a
+tank — that was rendered on the md tank and rejected — and a mast thin enough
+to look right is one source pixel wide, which the board's 4:1 decimation at
+rung 1 draws or drops depending on the sampling phase. That is the same lesson
+`docs/density_128.md` records: at board scale the win is silhouette, not
+greebling. `tests/test_raised_armour.py` holds both halves — only the family
+reaches out of its tile, and what it gained still draws at every rung-1
+sampling phase.
+
 ## Setup
 
 ```sh
@@ -157,7 +184,7 @@ python3 -m venv .venv
 
 | File | Contract |
 | --- | --- |
-| `units_atlas.png` | 1152x320 RGBA — drop-in `assets/tiles/units_atlas.png` |
+| `units_atlas.png` | 1152x480 RGBA — 64x96 cells, drop-in `assets/tiles/units_atlas.png` |
 | `units_atlas_b.png` | ambient animation frame B: rotors swept, air and sea bobbed |
 | `units_atlas_figures.png` | the same army with the tile's cast shadow subtracted, for the cut-ins (see below) |
 | `terrain_atlas.png` | 896x320 RGBA — drop-in `assets/tiles/terrain_atlas.png`; property columns carry alpha |

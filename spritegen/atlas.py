@@ -28,12 +28,14 @@ from .palette import FACTIONS, Faction
 from .units import ATLAS_ORDER, UNITS, WAKE, build_model
 from .voxel import compose_cell, place_in_cell, render, render_indexed
 
-# The units atlas's cell. It is square today; CELL_H is separate because a
-# silhouette that overflows its tile needs a taller-than-wide cell, and
-# compose_cell anchors everything to the cell's bottom edge so the extra
-# height is sky above the sprite.
+# The units atlas's cell: one tile wide, half a tile taller than that. A
+# silhouette with more mass than the grass tile it stands on has to overflow
+# that tile upward, and compose_cell anchors everything to the cell's bottom
+# edge, so the extra height is sky above the sprite and an unchanged model
+# draws exactly where it always did. Half a tile of headroom is what a raised
+# turret needs; a taller cell than that is mostly empty column.
 CELL_W = 64
-CELL_H = 64
+CELL_H = 96
 # Ambient animation frame B: air and sea units ride one voxel-scale pixel
 # higher (their shadows stay put, so the bob reads as hover/swell), and the
 # copters' rotor discs sweep 45 degrees inside build_model. Land units are
