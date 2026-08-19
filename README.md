@@ -173,22 +173,37 @@ that pipeline's paste step can be pointed at this art instead.
    - `render_indexed` (units) shades **per face normal into ramp slots** —
      top, rim, body, shadow, under — with ambient occlusion, the ground
      contact and the depth gradient charged as whole slot steps rather than
-     as fractions of a colour. Then a per-faction S0 contour, doubled on the
-     lower-right edges the unit has to separate from the ground on, S0
-     between two materials whose values are too close to read apart, and a
-     despeckle pass folding lone pixels into the plane they were nearly part
-     of. It also returns a per-pixel material id. Those passes are **ordered,
-     and the contour speaks last**: the outer boundary is S0's absolutely —
-     no pixel that touches transparency, diagonals included, may carry
-     anything else, so the halo is followed by a claim over the stair corners
-     it cannot reach, and the despeckle may only ever snap one S0 to another
-     out there. A rim caught on the boundary is **moved one pixel inboard**
-     onto the top plane it leads rather than deleted. Unordered, they left
-     the rim and the top plane meeting the ground every other pixel along a
-     long top-facing edge — the apc's whole roof line — which is an outline
-     that dots out and a silhouette that goes with it on plains and shoal.
-     The alpha never moves: the silhouette is the shape the model drew, and
-     only the colour under it changes.
+     as fractions of a colour. Then a per-faction S0 contour, S0 between two
+     materials whose values are too close to read apart, and a despeckle pass
+     folding lone pixels into the plane they were nearly part of. It also
+     returns a per-pixel material id. Those passes are **ordered, and the
+     contour speaks last**: the outer boundary is S0's absolutely — no pixel
+     that touches transparency, diagonals included, may carry anything else,
+     so the band is followed by a claim over the stair corners it cannot
+     reach, and the despeckle may only ever snap one S0 to another out there.
+     Unordered, they left the rim and the top plane meeting the ground every
+     other pixel along a long top-facing edge — the apc's whole roof line —
+     which is an outline that dots out and a silhouette that goes with it on
+     plains and shoal. The alpha never moves: the silhouette is the shape the
+     model drew, and only the colour under it changes.
+
+     **The contour is one logical pixel, not one pixel.** The game draws the
+     64px cell onto a 16px grid with nearest filtering, so it keeps one source
+     pixel in four: a 1px contour is three-quarters unsampled, and which
+     quarter survives is an accident of where the edge falls. That is why the
+     apc kept failing the game's legibility sweep after round 9 had made its
+     boundary structurally S0 — the outline was right and the board could not
+     see it. `CONTOUR_WEIGHT` states the band per edge in source pixels: **4
+     on the lit (top and left) edges, 2 on the ground-facing ones**, which
+     already carried a doubled halo. Only `_HALO` of that band sits outside
+     the silhouette — the md_tank is 63 of the 64px its cell allows, so a band
+     that grew outward would crop a model — and the rest is claimed inward off
+     the faction plane behind the edge. Two things the band may not eat: a
+     **fitting's lit face** (an accent always, a gunmetal highlight in its two
+     lit slots), because on a 31px infantry or an awash sub those are most of
+     the bright band the terrain ceiling reserves for units; and a **rim**,
+     which retreats one plane inboard ahead of the band, or keeps its pixel
+     and the one behind it when there is nothing to retreat onto.
    - `render` (terrain and buildings) is the older path: three shaded face
      tones per material, fractional occlusion, hash dither on broad tops and
      a 1px per-part outline.

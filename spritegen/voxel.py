@@ -108,6 +108,30 @@ def _face_pixels(sx: int, sy: int) -> dict[str, list[tuple[int, int]]]:
 
 Anchors = dict[tuple[int, int, int], tuple[int, int]]
 
+# Up, left, down, right — the four edges a contour is measured across. Up and
+# left are the lit ones; down and right face the ground the unit stands on.
+UP, LEFT, DOWN, RIGHT = (0, -1), (-1, 0), (0, 1), (1, 0)
+
+# How thick the S0 band across each edge is, at the 64px cell the models are
+# drawn at. The board draws that cell onto a 16px grid with nearest filtering,
+# so it keeps ONE SOURCE PIXEL IN FOUR: a contour thinner than four is sampled
+# or skipped by where it happens to fall, which is why a structurally
+# guaranteed S0 boundary (round 9) still left the apc's roof line dissolving
+# into plains. Four is ONE LOGICAL PIXEL — whatever the phase, the board lands
+# on it.
+#
+# Round 10 measured four on every edge against four on the lit edges alone
+# through the game's own legibility sweep; the lighter pair is what ships (see
+# README, "The contour is one logical pixel").
+CONTOUR_WEIGHT: dict[tuple[int, int], int] = {UP: 4, LEFT: 4, DOWN: 2, RIGHT: 2}
+
+# How much of that band may sit OUTSIDE the silhouette. It is the round-9 halo
+# unchanged, and it is a cell budget rather than a taste: the md_tank is 63 of
+# the 64 px its cell allows, so a band that grew outward would either crop a
+# model or shrink one. The rest of the weight is claimed inward, off the plane
+# behind the edge — the silhouette stays the shape the model drew.
+_HALO: dict[tuple[int, int], int] = {UP: 1, LEFT: 1, DOWN: 2, RIGHT: 2}
+
 
 def _bounds(model: Model) -> tuple[Anchors, int, int, int, int]:
     """Screen anchors per voxel plus the crop the sprite needs (2px margin for
@@ -303,18 +327,19 @@ def _despeckle(img: Image.Image, mids: bytearray) -> None:
 
 
 def _contour(img: Image.Image, mids: bytearray, ramps: list[Ramp | None]) -> None:
-    """Per-faction S0 contour, doubled on the terrain-facing edges.
+    """Per-faction S0 contour, CONTOUR_WEIGHT pixels thick across each edge.
 
-    Every silhouette pixel takes the S0 of the ramp it borders — never a
-    shared black, which reads as a sticker edge — and the lower-right edges,
-    the ones that have to separate the unit from the ground it stands on,
-    carry a second pixel.
+    Every contour pixel takes the S0 of the ramp it borders — never a shared
+    black, which reads as a sticker edge. The band runs `_HALO` pixels outward
+    into the transparency and the rest of the weight inward off the plane
+    behind the edge, so a board that keeps one source pixel in four lands on it
+    whatever the phase (see CONTOUR_WEIGHT).
 
-    The halo alone only answers for the pixels a plane faces out of; the
-    corner of every stair step still met the ground with whatever plane drew
-    it, which on a long top-facing edge is a dotted line of top and rim
-    breaking the outline every other pixel. `_claim_outer_boundary` closes
-    that, and is what makes the contour the last pass to speak.
+    The band alone only answers for the pixels a plane faces out of; the corner
+    of every stair step still met the ground with whatever plane drew it, which
+    on a long top-facing edge is a dotted line of top and rim breaking the
+    outline every other pixel. `_claim_outer_boundary` closes that, and is what
+    makes the contour the last pass to speak.
     """
     px = img.load()
     w, h = img.size
@@ -323,37 +348,207 @@ def _contour(img: Image.Image, mids: bytearray, ramps: list[Ramp | None]) -> Non
     def solid(x: int, y: int) -> bool:
         return 0 <= x < w and 0 <= y < h and opaque[y * w + x]
 
-    edges: list[tuple[int, int, Ramp]] = []
+    # First claim wins, so a pixel two edges reach takes its S0 from the plane
+    # above it and then from the one to its left — one stated order, rather
+    # than whichever of them happened to be painted last.
+    edges: dict[tuple[int, int], Ramp] = {}
+    # Rims the band reaches, with the direction it came from: a rim is the lit
+    # edge of the plane behind it, so it retreats ahead of the contour rather
+    # than being painted over (`_settle_rims`).
+    reached: list[tuple[int, int, tuple[int, int], Ramp]] = []
+
+    def claim(x: int, y: int, ramp: Ramp, step: tuple[int, int] | None = None) -> None:
+        if (x, y) in edges:
+            return
+        edges[(x, y)] = ramp
+        if step is not None and mids[y * w + x] == MID_FACTION:
+            if px[x, y][:3] == ramp[S_RIM]:
+                reached.append((x, y, step, ramp))
+
     for yy in range(h):
         for xx in range(w):
-            if opaque[yy * w + xx]:
+            if not opaque[yy * w + xx]:
                 continue
-            source = None
-            heavy: list[tuple[int, int]] = []
-            for nx, ny in ((xx, yy - 1), (xx - 1, yy), (xx + 1, yy), (xx, yy + 1)):
-                if not solid(nx, ny):
+            ramp = ramps[yy * w + xx]
+            if ramp is None:
+                continue
+            for step, weight in CONTOUR_WEIGHT.items():
+                if solid(xx + step[0], yy + step[1]):
                     continue
-                if source is None:
-                    source = ramps[ny * w + nx]
-                if ny < yy:  # body above: this is a bottom edge
-                    heavy.append((xx, yy + 1))
-                elif nx < xx:  # body to the left: a right edge
-                    heavy.append((xx + 1, yy))
-            if source is None:
-                continue
-            edges.append((xx, yy, source))
-            for ex, ey in heavy:  # terrain-facing: double the weight
-                if 0 <= ex < w and 0 <= ey < h and not solid(ex, ey):
-                    edges.append((ex, ey, source))
+                halo = _HALO[step]
+                for k in range(1, halo + 1):  # outward, into the transparency
+                    ex, ey = xx + step[0] * k, yy + step[1] * k
+                    if not (0 <= ex < w and 0 <= ey < h) or solid(ex, ey):
+                        break
+                    claim(ex, ey, ramp)
+                for k in range(weight - halo):  # inward, off the plane behind
+                    ex, ey = xx - step[0] * k, yy - step[1] * k
+                    if not (0 <= ex < w and 0 <= ey < h) or not solid(ex, ey):
+                        break
+                    # The band eats plane, never highlight — the same rule
+                    # `_interior_contour` draws by, that the hull gives up the
+                    # pixel and the feature does not. An accent is a lamp, a
+                    # canopy or a face and keeps every pixel it was drawn with;
+                    # a fitting keeps the two lit slots it is read by, because
+                    # on a 31px infantry or an awash sub those are most of the
+                    # bright band the terrain ceiling reserves for units. What
+                    # is still on the silhouette after that is
+                    # `_claim_outer_boundary`'s, absolutely, as it always was.
+                    if _is_highlight(px, mids, ramps, w, ex, ey):
+                        break
+                    claim(ex, ey, ramp, step)
 
+    retreats = _settle_rims(px, mids, w, h, edges, reached)
     interior = _interior_contour(px, mids, ramps, w, h, opaque)
-    for xx, yy, ramp in edges + interior:
+    for xx, yy, ramp in [(x, y, r) for (x, y), r in edges.items()] + interior:
         c = ramp[S_CONTOUR]
         px[xx, yy] = (c[0], c[1], c[2], 255)
         idx = yy * w + xx
         mids[idx] = MID_CONTOUR
         ramps[idx] = ramp
+    for (nx, ny), ramp in retreats.items():
+        c = ramp[S_RIM]
+        px[nx, ny] = (c[0], c[1], c[2], 255)
     _claim_outer_boundary(px, mids, ramps, w, h)
+
+
+def _is_highlight(
+    px, mids: bytearray, ramps: list[Ramp | None], w: int, x: int, y: int
+) -> bool:
+    """Is this pixel a fitting's lit face — a thing the band may not eat?
+
+    An accent always is: it is a lamp, a canopy or a face, drawn on tens of
+    pixels, and it identifies the unit. A gunmetal fitting is one only in its
+    two lit slots — a barrel's top, a deck's steel — because its dark slots are
+    tracks and hulls that the outline may run straight through. The faction
+    plane is not asked: its lit edge is a rim, and a rim retreats rather than
+    stands (`_settle_rims`).
+    """
+    i = y * w + x
+    if mids[i] == MID_ACCENT:
+        return True
+    if mids[i] != MID_GUNMETAL:
+        return False
+    ramp = ramps[i]
+    return ramp is not None and px[x, y][:3] in (ramp[S_TOP], ramp[S_RIM])
+
+
+def _settle_rims(
+    px,
+    mids: bytearray,
+    w: int,
+    h: int,
+    edges: dict[tuple[int, int], Ramp],
+    reached: list[tuple[int, int, tuple[int, int], Ramp]],
+) -> dict[tuple[int, int], Ramp]:
+    """Move every rim the band reached one plane inboard, or leave it standing.
+
+    A rim is the lit edge of the plane behind it, and it is the brightest thing
+    on the sprite — the band `UnitBandCoverage` reserves for units. A band four
+    pixels deep swallows whole leading edges, so a rim RETREATS ahead of it,
+    onto the first top-plane pixel the band did not take.
+
+    A rim with nowhere to retreat to keeps its pixel, and the band gives way
+    there rather than the art: on a 31px infantry the lit plane is the rim and
+    nothing else, so eating it is the terrain ceiling losing its counterpart to
+    win an outline the halo outside it is already drawing. Returns the pixels to
+    relight; the ones it spared are dropped from `edges` in place.
+    """
+    retreats: dict[tuple[int, int], tuple[Ramp, tuple[int, int]]] = {}
+    for x, y, step, ramp in reached:
+        target = None
+        for k in range(1, CONTOUR_WEIGHT[step] + 1):
+            nx, ny = x - step[0] * k, y - step[1] * k
+            if not (0 <= nx < w and 0 <= ny < h):
+                break
+            # The band, and the rest of the leading edge it is eating: a rim
+            # runs the depth of the voxel face it lit, and each of its pixels
+            # asks this question for itself.
+            if mids[ny * w + nx] != MID_FACTION or px[nx, ny][:3] == ramp[S_RIM]:
+                continue
+            if px[nx, ny][:3] != ramp[S_TOP] or (nx, ny) in edges:
+                break
+            # One pixel of plane cannot answer for two pixels of rim, or a
+            # leading edge quietly loses half its length to a shared target.
+            if (nx, ny) in retreats:
+                continue
+            target = (nx, ny)
+            break
+        if target is None:
+            edges.pop((x, y), None)
+            _free_lit_tip(px, mids, w, h, x, y, step, ramp, edges, retreats)
+        else:
+            retreats[target] = (ramp, step)
+    return _pair_lone_rims(px, mids, w, h, edges, retreats)
+
+
+def _free_lit_tip(
+    px,
+    mids: bytearray,
+    w: int,
+    h: int,
+    x: int,
+    y: int,
+    step: tuple[int, int],
+    ramp: Ramp,
+    edges: dict[tuple[int, int], Ramp],
+    retreats: dict[tuple[int, int], tuple[Ramp, tuple[int, int]]],
+) -> None:
+    """Give a spared rim the pixel behind it when the band took everything else.
+
+    A lit tip one pixel wide — an infantry's shoulder, a mast — is a rim with
+    nothing behind it to retreat onto, so the band gives way and leaves it
+    standing. Standing alone in contour it is dirt, and `_despeckle` folds it
+    away, which spends the sprite's brightest pixel on an outline the halo
+    outside it is already drawing. So the tip keeps the pixel behind it too.
+    """
+    nx, ny = x - step[0], y - step[1]
+    if not (0 <= nx < w and 0 <= ny < h) or mids[ny * w + nx] != MID_FACTION:
+        return
+    if px[nx, ny][:3] not in (ramp[S_TOP], ramp[S_RIM]):
+        return
+    edges.pop((nx, ny), None)
+    retreats[(nx, ny)] = (ramp, step)
+
+
+def _pair_lone_rims(
+    px,
+    mids: bytearray,
+    w: int,
+    h: int,
+    edges: dict[tuple[int, int], Ramp],
+    retreats: dict[tuple[int, int], tuple[Ramp, tuple[int, int]]],
+) -> dict[tuple[int, int], Ramp]:
+    """A rim that retreated alone takes the next pixel of plane with it.
+
+    One lit pixel among four unlike neighbours is dirt by `_despeckle`'s own
+    rule, and `_despeckle` duly folds it back into the plane — so a retreat
+    that lands alone is a retreat that never happened. It lands as a pair
+    instead, which is also how a rim was drawn in the first place: the leading
+    face of a voxel, two rows deep.
+    """
+    lit = {cell: ramp for cell, (ramp, _) in retreats.items()}
+
+    def lit_beside(x: int, y: int, ramp: Ramp) -> bool:
+        for dx, dy in _NEIGHBOURS4:
+            nx, ny = x + dx, y + dy
+            if (nx, ny) in retreats:
+                return True
+            if not (0 <= nx < w and 0 <= ny < h) or (nx, ny) in edges:
+                continue
+            if px[nx, ny][:3] == ramp[S_RIM]:
+                return True
+        return False
+
+    for (x, y), (ramp, step) in retreats.items():
+        if lit_beside(x, y, ramp):
+            continue
+        nx, ny = x - step[0], y - step[1]
+        if not (0 <= nx < w and 0 <= ny < h) or (nx, ny) in edges:
+            continue
+        if mids[ny * w + nx] == MID_FACTION and px[nx, ny][:3] == ramp[S_TOP]:
+            lit[(nx, ny)] = ramp
+    return lit
 
 
 def _claim_outer_boundary(
