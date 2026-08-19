@@ -69,9 +69,11 @@ the rim pass lifted everybody (17.3% against 14.0-14.9%, round 6) — the pixels
 moved, the pinned number did not. Buildings are
 neutral concrete and stone under faction-colored roofs, caps and banners, and
 still render through the older shading path (`render`), which terrain shares.
-Shadow density encodes altitude: land units get a quarter-tone contact
-shadow, air units a half-tone one offset down-right with ground showing
-between, ships a displacement shadow with waterline foam. The sub carries a
+**The cast shadow is solid**, and its size and offset are what encode
+altitude: land units get a tight contact shadow, air units a larger one
+offset down-right with ground showing between, ships a displacement shadow
+with waterline foam. It was a 1px checkerboard until the board was measured
+through it — see "The shadow is drawn for every rung" below. The sub carries a
 **wake** on top of that — running foam down its own underside and trailing off
 the stern — because a hull with no freeboard has nothing else to separate it
 from open sea. Its hull and awash deck also sit a band under every other keel
@@ -79,8 +81,31 @@ from open sea. Its hull and awash deck also sit a band under every other keel
 line and separates as a contrast pair — dark hull against mid water, under a
 lit sail and a light wake edge — rather than by out-valuing the sea, which is
 a contest a boat awash cannot win. Nothing a unit
-emits is semi-transparent — every shadow and fleck is an opaque dither,
+emits is semi-transparent — every shadow and every fleck of foam is opaque,
 because partial alpha is a blurred halo at cut-in scale.
+
+### The shadow is drawn for every rung
+
+The board offers whole zoom rungs 1 to 5 and draws the 64px cell onto a 16px
+grid with nearest filtering, so it keeps one source pixel in 4/z: 4:1 at rung
+1, 2:1 at rung 2, **1:1 at rung 4**. A shadow with 1px structure is therefore
+a different picture at every rung, and the checkerboard was: measured over one
+army's shadows, a sampling phase drew between **0% and 285%** of the shadow's
+own density at rung 1 and between **0% and 268%** at rung 2 — on the board,
+solid when zoomed out, all but gone at the default rung, and loose black dots
+at 1:1, which two players reported as "ugly black dots".
+
+Solid is the only shape with no sub-pixel structure to lose, and it measures
+**0.92-1.07** at rung 1, **0.99-1.01** at rung 2 and exactly 1.0 at rung 4.
+The two alternatives were rendered against it at rungs 1, 2 and 4 rather than
+argued: a **logical-pixel checker** (4px blocks, the round-10 rule applied to
+the dither) reads as a chequered flag under an aircraft at 1:1 and as a dashed
+line at rung 2, and a **solid core with a dithered fringe** reads as debris.
+`tests/test_generated_output.py::CastShadow` is what holds the shipped shape
+to it. The sub's **wake** followed: it ran on the shadow's own parity so that
+it showed exactly where the checkerboard did not reach, so it is now drawn
+solid and over the shadow — foam is what the surface does over the
+displacement shading, not a stipple interleaved with it.
 
 ## Setup
 
@@ -128,12 +153,14 @@ python3 -m venv .venv
 | `autotiles/bridges.png` | the two bridge deck orientations, E-W then N-S |
 | `autotiles/sea.png` | the three sea phase variants, phase 0 first (see below) |
 
-`units_atlas_figures.png` exists because a shadow is drawn for a scale. The
-tile shadow is an opaque checkerboard so the ground shows between its pixels,
-which reads as half-tone under a 16px sprite; the game's cut-ins draw the same
-64px cell at 1:1 over a ground plane and a contact shadow of their own, and
-there the eye resolves the dots one by one — a player reported them as "weird
-black points at the bottom of the tank". The sheet **subtracts** that shadow
+`units_atlas_figures.png` exists because a figure standing on a drawn ground
+already has a shadow. The tile shadow grounds the cell against the board's
+tile; the game's cut-ins draw the same 64px cell over a ground plane and a
+contact shadow **of their own**, so the tile's would be a second shadow rather
+than the same one. (It was first cut for a sharper reason — the shadow was a
+checkerboard then, and at 1:1 the cut-in resolved its dots one by one. The
+shadow is solid now and that half of the argument has retired; the doubling
+has not.) The sheet **subtracts** that shadow
 from the composed cell rather than composing a cell without one, so it is the
 board's art and can never drift from it: the waterline foam is placed against
 the composed cell's own spans, so a shadow that was never drawn would have

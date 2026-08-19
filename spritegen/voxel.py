@@ -752,27 +752,23 @@ def compose_cell(
     """Center a rendered sprite on a transparent atlas cell with its shadow.
 
     Shadow policy (sprite review round 3): land units get a tight hard
-    dithered CONTACT shadow — without one they float over the tile — and
-    the airborne cue is the shadow's offset and the sky between unit and
-    shadow, not its presence: 'air' hovers over a larger dithered ellipse
-    displaced down-right. Dither, never blurred alpha — a gaussian smudge
-    is a grey stain at cut-in scale and breaks under nearest sampling.
+    CONTACT shadow — without one they float over the tile — and the airborne
+    cue is the shadow's offset and the sky between unit and shadow, not its
+    presence: 'air' hovers over a larger ellipse displaced down-right.
     'sea' sits in the water on a displacement shadow with waterline foam;
     `wake` adds the running foam a hull that is mostly under water needs to
     separate from open sea at all (see `_wake`).
     'prop' composes with no shadow (terrain tiles draw their own grounding).
 
-    Shadow density now encodes altitude (sprite fix spec, section 4): a land
-    unit's contact shadow is a quarter-tone hugging the hull, an airborne
-    one a half-tone offset down-right with ground showing between. Nothing
-    here is semi-transparent — every shadow and every fleck of foam is an
-    opaque dither, because partial alpha is a blurred halo at cut-in scale.
+    Altitude is read off the shadow's SIZE and OFFSET, never off its density
+    (the round-3 quarter-tone/half-tone pair is superseded — see
+    `_shadow_ellipse`): a land unit's hugs the hull, an airborne one is
+    larger and displaced down-right with ground showing between. Nothing
+    here is semi-transparent — the shadow and every fleck of foam are opaque,
+    because partial alpha is a blurred halo at cut-in scale.
 
     `shadow=False` leaves that cast shadow off, for a surface that draws its
-    own ground and its own shadow rather than standing the cell on a tile:
-    the dither is a half-tone read at tile size, and at 1:1 — where one texel
-    is one screen pixel — the eye resolves the individual dots instead, which
-    is what the cut-ins were showing.
+    own ground and its own shadow rather than standing the cell on a tile.
 
     It SUBTRACTS rather than skips, so the cell is the tile's cell with those
     pixels taken back out and can never be a second opinion on the art. The
@@ -793,15 +789,13 @@ def compose_cell(
         # Ships sit IN the water: a flat displacement shading right under
         # the hull instead of a floating blob, then foam at the waterline.
         rx = max(6, int(w * 0.42))
-        cast = _dither_ellipse(out, cell // 2 + dx, bottom - 1, rx, max(2, rx // 5))
+        cast = _shadow_ellipse(out, cell // 2 + dx, bottom - 1, rx, max(2, rx // 5))
     elif kind == "air":
         rx = max(6, int(w * 0.30))
-        cast = _dither_ellipse(out, cell // 2 + dx + 4, 58, rx, max(2, rx // 3))
+        cast = _shadow_ellipse(out, cell // 2 + dx + 4, 58, rx, max(2, rx // 3))
     elif kind == "land":
         rx = max(4, int(w * 0.34))
-        cast = _dither_ellipse(
-            out, cell // 2 + dx, bottom - 1, rx, max(2, rx // 4), quarter=True
-        )
+        cast = _shadow_ellipse(out, cell // 2 + dx, bottom - 1, rx, max(2, rx // 4))
     place_in_cell(out, sprite, x0, y0)
     if kind == "sea":
         if wake:
@@ -821,8 +815,8 @@ def _erase_shadow(img: Image.Image, cast: list[tuple[int, int]]) -> None:
     """
     px = img.load()
     for xx, yy in cast:
-        if px[xx, yy] == (*SHADOW, 255):
-            px[xx, yy] = (0, 0, 0, 0)
+        if px[xx, yy] == CAST:
+            px[xx, yy] = EMPTY
 
 
 def place_in_cell(cell_img: Image.Image, sprite: Image.Image, x0: int, y0: int) -> None:
@@ -845,6 +839,11 @@ def place_in_cell(cell_img: Image.Image, sprite: Image.Image, x0: int, y0: int) 
 FOAM_ROWS = 4
 FOAM: RGB = (226, 240, 250)
 SHADOW: RGB = (16, 18, 24)
+# What a composed shadow pixel and an untouched one look like. One statement,
+# because three passes ask: the ellipse writes CAST, the wake may take a CAST
+# pixel back, and `_erase_shadow` turns whatever is still CAST into EMPTY.
+CAST = (*SHADOW, 255)
+EMPTY = (0, 0, 0, 0)
 # How far the wake runs on past the stern, in cell columns.
 WAKE_TRAIL = 6
 
@@ -859,9 +858,14 @@ def _wake(img: Image.Image, sprite: Image.Image, x0: int, y0: int) -> None:
     rather than a fixed row, and then keeps going up-right past the stern
     along the dimetric hull axis (2 columns per row).
 
-    Opaque dither, never partial alpha, and only into empty pixels: the
-    displacement shadow is laid on the same parity, so the wake shows exactly
-    where that shadow does not reach instead of stippling on top of it.
+    Opaque, never partial alpha, and drawn ON the water rather than beside it:
+    it takes empty pixels and shadow pixels alike, because the foam is what
+    the surface does over the displacement shading, not a stipple interleaved
+    with it. It ran on the shadow's own parity while the shadow was a 1px
+    checkerboard; a solid shadow (see `_shadow_ellipse`) would otherwise have
+    swallowed the whole length of it and left the hull nothing but its stern
+    trail. `_erase_shadow` keeps a shadow pixel the wake has taken, so the
+    figure sheet is unmoved by this.
     """
     px = img.load()
     sp = sprite.load()
@@ -869,7 +873,7 @@ def _wake(img: Image.Image, sprite: Image.Image, x0: int, y0: int) -> None:
     sw, sh = sprite.size
 
     def fleck(x: int, y: int) -> None:
-        if 0 <= x < w and 0 <= y < h and (x + y) % 2 == 0 and px[x, y][3] == 0:
+        if 0 <= x < w and 0 <= y < h and px[x, y] in (EMPTY, CAST):
             px[x, y] = (*FOAM, 255)
 
     keel = []
@@ -923,15 +927,29 @@ def _waterline_foam(img: Image.Image) -> None:
                 px[hi + k, yy] = (*foam, 255)
 
 
-def _dither_ellipse(
-    img: Image.Image, cx: int, cy: int, rx: int, ry: int, quarter: bool = False
+def _shadow_ellipse(
+    img: Image.Image, cx: int, cy: int, rx: int, ry: int
 ) -> list[tuple[int, int]]:
-    """A hard checkerboard shadow: opaque dark pixels, no partial alpha.
+    """A hard SOLID shadow: opaque dark pixels, filled, no partial alpha.
 
-    Reads as half-tone from the board and stays crisp at cut-in scale, where
-    a blurred alpha ellipse becomes a grey stain; the empty pixels let the
-    terrain underneath show through, so the shadow tints without smearing.
-    `quarter` is the lighter grid a land unit's contact shadow uses.
+    It used to be a 1px checkerboard, on the argument that the gaps let the
+    terrain through so the shadow tinted without smearing. That argument only
+    ever held at one sampling ratio. The board draws this 64px cell onto a
+    16px grid with nearest filtering at whole zoom rungs 1..5, so it keeps one
+    source pixel in 4/z — and a 1px parity read differently at every rung it
+    was sampled at: solid at rung 1 (the kept phase is the shadow's own),
+    nearly absent at rung 2 for the land grid and simultaneously solid for the
+    air one, and at rung 4, where the art is 1:1, individual black dots. Two
+    players reported those dots on the board. A filled ellipse is the one
+    shape whose read cannot move with the ratio — it is the same shadow at
+    every rung, which is what "one logical pixel" buys the contour, bought
+    here by having no sub-pixel structure to lose at all.
+
+    A logical-pixel checker (4px blocks) and a solid core with a dithered
+    fringe were both rendered against this at rungs 1, 2 and 4: the checker
+    reads as a chequered flag under an aircraft at 1:1 and as a dashed line at
+    rung 2, and the fringe reads as debris. Solid was the only one that read
+    as shade at all three.
 
     Returns the pixels it wrote, so a caller composing a shadowless cell can
     take exactly those back out again — see compose_cell's `shadow`.
@@ -943,11 +961,9 @@ def _dither_ellipse(
         for xx in range(cx - rx, cx + rx + 1):
             if not (0 <= xx < w and 0 <= yy < h):
                 continue
-            if (xx + yy) % 2 or (quarter and xx % 2):
-                continue
             if ((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2 > 1.0:
                 continue
             if px[xx, yy][3] == 0:
-                px[xx, yy] = (*SHADOW, 255)
+                px[xx, yy] = CAST
                 written.append((xx, yy))
     return written

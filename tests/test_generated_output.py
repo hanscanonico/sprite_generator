@@ -139,10 +139,11 @@ class AtlasContract(unittest.TestCase):
 class FigureSheet(unittest.TestCase):
     """units_atlas_figures.png: the board's army, minus the tile's shadow.
 
-    The cut-ins draw the art at 1:1 over a ground plane of their own, where
-    the shadow's half-tone stops reading as shade and reads as loose dots.
-    What the sheet must never be is a second opinion on the ART: the figure
-    a cut-in blows up has to be the figure the board shows.
+    The cut-ins draw the art at 1:1 over a ground plane of their own, with a
+    contact shadow of their own under it, so the tile's would be a second
+    shadow rather than the same one. What the sheet must never be is a second
+    opinion on the ART: the figure a cut-in blows up has to be the figure the
+    board shows.
     """
 
     def test_it_removes_shadow_pixels_and_changes_nothing_else(self):
@@ -402,7 +403,7 @@ class UnitBandCoverage(unittest.TestCase):
     # against a bomber at 46% and a b_copter at 50%, and a gate that names
     # its own violators is a note, not a gate.
     MIN_FACTION_SHARE = 0.55
-    COMPOSED = {(16, 18, 24), (226, 240, 250)}  # shadow dither, waterline foam
+    COMPOSED = {(16, 18, 24), (226, 240, 250)}  # cast shadow, waterline foam
 
     def _unit_pixels(self, cell):
         px = cell.convert("RGBA").load()
@@ -1359,6 +1360,73 @@ class ContourWeight(unittest.TestCase):
                 self.assertGreaterEqual(contour / boundary, self.MIN_BOARD_CONTOUR)
 
 
+class CastShadow(unittest.TestCase):
+    """The cast shadow reads as shade at every rung the board offers.
+
+    `BattleZoom` steps whole rungs 1 to 5, and the 64px cell is drawn onto a
+    16px grid with nearest filtering, so the board keeps one source pixel in
+    4/z: 4:1 at rung 1, 2:1 at rung 2, 1:1 at rung 4. The shadow used to be a
+    1px checkerboard, and a 1px parity is a different picture at every one of
+    those — measured over this same army it came out anywhere from 0% to 285%
+    of its own density depending on the rung and on where the sampling grid
+    happened to fall, which on the board is solid at rung 1, all but gone at
+    rung 2 and loose black dots at rung 4. Two players reported the dots.
+
+    Solid is the shape with no sub-pixel structure to lose, which is what
+    these two readings pin: the shadow uses both parities (so it cannot go
+    back to a checkerboard unnoticed), and every rung at every phase draws
+    the same share of it.
+    """
+
+    SHADOW = (16, 18, 24)
+    # Source pixels per screen pixel at the rungs a match is played at.
+    RATIOS = (4, 2, 1)
+    # How far a phase's share of the shadow may sit from the shadow's own
+    # density. The checkerboard it replaced misses this by 0.85 at its best
+    # rung; solid comes in at 0.07.
+    TOLERANCE = 0.15
+
+    def _shadows(self) -> list[list[tuple[int, int]]]:
+        """Every unit's cast-shadow pixels. One faction: the shadow belongs to
+        the cell rather than to the army and is identical on every row."""
+        fac = FACTIONS[1]
+        found = []
+        for uid in ATLAS_ORDER:
+            px = atlas.unit_cell(uid, fac).convert("RGBA").load()
+            found.append(
+                [
+                    (x, y)
+                    for y in range(64)
+                    for x in range(64)
+                    if px[x, y][3] == 255 and px[x, y][:3] == self.SHADOW
+                ]
+            )
+        return found
+
+    def test_every_unit_casts_a_shadow_on_both_parities(self):
+        for uid, cast in zip(ATLAS_ORDER, self._shadows()):
+            with self.subTest(unit=uid):
+                self.assertTrue(cast, "no cast shadow at all")
+                self.assertEqual({(x + y) % 2 for x, y in cast}, {0, 1})
+                self.assertEqual({x % 2 for x, y in cast}, {0, 1})
+
+    def test_every_rung_draws_the_same_share_of_it(self):
+        casts = self._shadows()
+        total = sum(len(c) for c in casts)
+        for ratio in self.RATIOS:
+            for phase_y in range(ratio):
+                for phase_x in range(ratio):
+                    drawn = sum(
+                        1
+                        for cast in casts
+                        for x, y in cast
+                        if x % ratio == phase_x and y % ratio == phase_y
+                    )
+                    share = drawn * ratio * ratio / total
+                    with self.subTest(ratio=ratio, phase=(phase_x, phase_y)):
+                        self.assertAlmostEqual(share, 1.0, delta=self.TOLERANCE)
+
+
 class Silhouette(unittest.TestCase):
     """Units must be tellable apart by mass at board zoom (32px), where
     colour and greebling are averaged away. Pairwise IoU of the 1-bit
@@ -1446,7 +1514,7 @@ class IndexedPalette(unittest.TestCase):
     obvious in a histogram.
     """
 
-    SHADOW = (16, 18, 24)  # the deliberate contact/altitude dither
+    SHADOW = (16, 18, 24)  # the deliberate contact/altitude shadow
     FOAM = (226, 240, 250)
 
     def _pixels(self, img) -> list[tuple[int, int, int, int]]:
@@ -1505,8 +1573,9 @@ class IndexedPalette(unittest.TestCase):
 
     def test_no_isolated_pixel_outside_the_dither(self):
         """Spec item 10: a pixel differing from all four of its orthogonal
-        neighbours is dirt at cut-in and shimmer at zoom-out. The shadow and
-        the foam are the intentional dither and are exempt by colour."""
+        neighbours is dirt at cut-in and shimmer at zoom-out. The foam is
+        the intentional dither, and the cast shadow thins to a pixel at the
+        ends of its ellipse; both are exempt by colour."""
         intentional = {self.SHADOW, self.FOAM}
         for fac in FACTIONS:
             for uid in ATLAS_ORDER:
