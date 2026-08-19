@@ -120,9 +120,9 @@ UP, LEFT, DOWN, RIGHT = (0, -1), (-1, 0), (0, 1), (1, 0)
 # into plains. Four is ONE LOGICAL PIXEL — whatever the phase, the board lands
 # on it.
 #
-# Round 10 measured four on every edge against four on the lit edges alone
-# through the game's own legibility sweep; the lighter pair is what ships (see
-# README, "The contour is one logical pixel").
+# Round 10 measured four on every edge against four on the lit edges and two on
+# the ground-facing ones, through the game's own legibility sweep; the lighter
+# pair is what ships (see README, "The contour is one logical pixel").
 CONTOUR_WEIGHT: dict[tuple[int, int], int] = {UP: 4, LEFT: 4, DOWN: 2, RIGHT: 2}
 
 # How much of that band may sit OUTSIDE the silhouette. It is the round-9 halo
