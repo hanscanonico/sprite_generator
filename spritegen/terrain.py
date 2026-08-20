@@ -57,6 +57,7 @@ WATER_LIGHT = (113, 179, 219)  # L168
 SAND = (178, 166, 127)  # L166
 SAND_DARK = (150, 139, 106)  # L139
 SNOW = (168, 174, 182)  # cool foam/marking grey, L173
+WILDFLOWER = (214, 163, 57)  # the field's one warm accent, L172
 
 # Woods canopy tones (design review round 3): the tile is a filled canopy
 # with its own value band — clearly darker than plains underfoot and than
@@ -184,22 +185,57 @@ _TUFTS = (
 )
 _WILDFLOWERS = ((30, 36), (50, 40))
 
+
+# A clump's leaves, kept off GRASS_DARK so the tufts stay countable per phase.
+_LEAF = darken(GRASS_DARK, 0.18)
+
+
+def _pebble(t: Image.Image, x: int, y: int) -> None:
+    _rect(t, x, y + 1, 3, 2, ROAD_DARK)
+    _rect(t, x + 1, y, 2, 1, ROAD)
+
+
+def _flower_clump(t: Image.Image, x: int, y: int) -> None:
+    _rect(t, x, y + 1, 4, 1, _LEAF)
+    _rect(t, x, y, 1, 1, WILDFLOWER)
+    _rect(t, x + 2, y, 1, 1, SNOW)
+    _rect(t, x + 3, y + 1, 1, 1, WILDFLOWER)
+
+
+def _scuff(t: Image.Image, x: int, y: int) -> None:
+    _rect(t, x, y, 6, 3, TIMBER_DARK)
+    _rect(t, x + 1, y + 1, 4, 1, TIMBER)
+
+
+# A decal is scattered ground detail and nothing more: a stone, a flower clump,
+# a patch of bare earth, all in the tile's own tones and all under the terrain
+# value ceiling. Deliberately no signpost, fence or marker — a drawn object on
+# open ground reads as a property from across the board. A decal is drawn inside
+# the cell (`_rect` clips, unlike the tufts' `_wrap_rect`) so it never overhangs
+# into the neighbour, and it stands clear of the tufts, which is what keeps
+# every phase carrying the same field.
+_DECALS = {"pebble": _pebble, "flower": _flower_clump, "scuff": _scuff}
+
 # Phase offsets for plains — the sea's rule (SEA_PHASES below) applied to the
-# ground most of a board is made of. Each entry is (grain salt, prop dx, dy): the
-# same field with its grain in a different phase and its props stood elsewhere,
-# so what repeats over a stretch of it is no longer one tile. Same count and same
-# tones every phase, which is what keeps the field's value read a phase apart.
-# Phase 0 is the atlas column, so a board that has not adopted the sheet is
-# unchanged and adoption is additive.
-PLAINS_PHASES: tuple[tuple[int, int, int], ...] = (
-    (PLAINS_SALT, 0, 0),
-    (11, 27, 19),
-    (19, 45, 37),
+# ground most of a board is made of. Each entry is (grain salt, prop dx, dy,
+# decals): the same field with its grain in a different phase and its props
+# stood elsewhere, so what repeats over a stretch of it is no longer one tile.
+# Same count and same tones every phase, which is what keeps the field's value
+# read a phase apart. Phase 0 is the atlas column, so a board that has not
+# adopted the sheet is unchanged and adoption is additive.
+# Rarity is this table's job rather than a decal's: three of the five phases are
+# bare, so a decal is a scattered find on an open field instead of a texture.
+PLAINS_PHASES: tuple[tuple[int, int, int, tuple[tuple[str, int, int], ...]], ...] = (
+    (PLAINS_SALT, 0, 0, ()),
+    (11, 27, 19, ()),
+    (19, 45, 37, ()),
+    (29, 13, 49, (("pebble", 21, 40), ("scuff", 43, 14))),
+    (37, 55, 7, (("flower", 12, 22), ("pebble", 45, 50))),
 )
 
 
 def plains(phase: int = 0) -> Image.Image:
-    grain, dx, dy = PLAINS_PHASES[phase]
+    grain, dx, dy, decals = PLAINS_PHASES[phase]
     t = _ground(GRASS, grain)
     for i, (sx, sy) in enumerate(_TUFTS):
         x, y = sx + dx, sy + dy
@@ -207,7 +243,9 @@ def plains(phase: int = 0) -> Image.Image:
         _wrap_rect(t, x + (i % 2), y - 1, 1, 1, _lit(GRASS, 0.18))
     for fx, fy in _WILDFLOWERS:
         _wrap_rect(t, fx + dx, fy + dy, 1, 1, SNOW)
-        _wrap_rect(t, fx + dx + 1, fy + dy, 1, 1, (214, 163, 57))
+        _wrap_rect(t, fx + dx + 1, fy + dy, 1, 1, WILDFLOWER)
+    for kind, x, y in decals:
+        _DECALS[kind](t, x, y)
     return t
 
 

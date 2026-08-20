@@ -195,7 +195,7 @@ python3 -m venv .venv
 | `autotiles/{roads,rivers,coast,shoals,woods}.png` | 16-variant connection sheets (see below) |
 | `autotiles/bridges.png` | the two bridge deck orientations, E-W then N-S |
 | `autotiles/sea.png` | the three sea phase variants, phase 0 first (see below) |
-| `autotiles/plains.png` | the three plains phase variants, phase 0 first (see below) |
+| `autotiles/plains.png` | the five plains phase variants, phase 0 first (see below) |
 | `autotiles/mountain.png` | the three mountain phase variants, phase 0 first (see below) |
 
 `units_atlas_figures.png` exists because a figure standing on a drawn ground
@@ -246,23 +246,25 @@ board that adopts it keeps every cell it does not re-key; nothing has to move
 on the day the game registers the sheet.
 
 `autotiles/plains.png` is that rule on the ground most of a board is made of,
-and it is phased the same way: three tiles, phase 0 the atlas plains column byte
+and it is phased the same way: five tiles, phase 0 the atlas plains column byte
 for byte, chosen by the same coordinate hash. A phase moves the grain's salt and
 stands the tufts and wildflowers somewhere else — same count, same tones, wrapped
 around the tile rather than off it — because plains is the reference ground most
 contrast pairs are read against, so a phase may vary the field's texture and not
 its value.
 
+Two of the five carry **decals**: a stone, a flower clump, a patch of bare earth,
+drawn in the tile's own tones and under the terrain value ceiling. They are
+ground detail and never a game object — no signpost, fence or marker, which a
+board reads as a property from across the room — and they are drawn inside the
+cell rather than wrapped, so a decal never overhangs its neighbour. Rarity is
+`PLAINS_PHASES`' job rather than each decal's: three of the five phases stay
+bare, so a decal is a scattered find on an open field. If a field ever reads
+busy, repeat a bare phase in that table instead of thinning a decal.
 `autotiles/mountain.png` is the same rule on the tile a repeat shows up in most
 loudly: mountain is the board's most silhouette-dominant terrain, so a range of
-it is a wall of one peak drawn over and over. Three tiles again, phase 0 the
 atlas mountain column byte for byte. A phase moves where the three summits
-stand, the ridges and cracks hanging under them, and the seed of the jagged snow
-line — and moves **nothing else**: the ground line and the contact shadow are
 drawn at the same row in every phase, so a ridge of mountains stands on one
-horizon rather than reading as peaks at different altitudes, and the rock and
-snow tones are the shipped tile's throughout (they were authored under the value
-ceiling and a phase is not the place to re-open that).
 
 Note the game's `make tiles` rebuilds its atlases from its own PixVoxel
 pipeline and would overwrite installed atlases; the per-cell exports exist so
