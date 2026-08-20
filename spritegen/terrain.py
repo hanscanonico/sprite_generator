@@ -189,6 +189,13 @@ _WILDFLOWERS = ((30, 36), (50, 40))
 # A clump's leaves, kept off GRASS_DARK so the tufts stay countable per phase.
 _LEAF = darken(GRASS_DARK, 0.18)
 
+# Bare ground worn through the field: road gravel warmed toward beach sand, L125.
+# The scuff was drawn in the bridge deck's timber brown, the warmest tone on the
+# ground palette — and the board keeps one source pixel in four at its default
+# rung, so a 6x3 mark arrives as one or two pixels of it and reads as a stray
+# faction pixel. Faction hue is the armies'; a scuff is dirt.
+_EARTH = mix(SAND_DARK, ROAD_DARK, 0.5)
+
 
 def _pebble(t: Image.Image, x: int, y: int) -> None:
     _rect(t, x, y + 1, 3, 2, ROAD_DARK)
@@ -203,8 +210,8 @@ def _flower_clump(t: Image.Image, x: int, y: int) -> None:
 
 
 def _scuff(t: Image.Image, x: int, y: int) -> None:
-    _rect(t, x, y, 6, 3, TIMBER_DARK)
-    _rect(t, x + 1, y + 1, 4, 1, TIMBER)
+    _rect(t, x, y, 6, 3, _EARTH)
+    _rect(t, x + 1, y + 1, 4, 1, SAND_DARK)
 
 
 # A decal is scattered ground detail and nothing more: a stone, a flower clump,
