@@ -196,6 +196,7 @@ python3 -m venv .venv
 | `autotiles/bridges.png` | the two bridge deck orientations, E-W then N-S |
 | `autotiles/sea.png` | the three sea phase variants, phase 0 first (see below) |
 | `autotiles/plains.png` | the three plains phase variants, phase 0 first (see below) |
+| `autotiles/mountain.png` | the three mountain phase variants, phase 0 first (see below) |
 
 `units_atlas_figures.png` exists because a figure standing on a drawn ground
 already has a shadow. The tile shadow grounds the cell against the board's
@@ -232,8 +233,8 @@ demo map composes from these, which is why its roads connect and its island
 has a shoreline; the atlases themselves are
 unchanged drop-ins.
 
-`autotiles/sea.png` and `autotiles/plains.png` are the sheets that are not
-connection sets. The sea's is the
+`autotiles/sea.png`, `autotiles/plains.png` and `autotiles/mountain.png` are
+the sheets that are not connection sets. The sea's is the
 same open water in three **phases**, laid out left to right with a 2px gutter
 like every other sheet. A field of sea reads visibly row-aligned however the
 glints are spread inside one tile, because what lines up is the repeat — so
@@ -251,6 +252,17 @@ stands the tufts and wildflowers somewhere else — same count, same tones, wrap
 around the tile rather than off it — because plains is the reference ground most
 contrast pairs are read against, so a phase may vary the field's texture and not
 its value.
+
+`autotiles/mountain.png` is the same rule on the tile a repeat shows up in most
+loudly: mountain is the board's most silhouette-dominant terrain, so a range of
+it is a wall of one peak drawn over and over. Three tiles again, phase 0 the
+atlas mountain column byte for byte. A phase moves where the three summits
+stand, the ridges and cracks hanging under them, and the seed of the jagged snow
+line — and moves **nothing else**: the ground line and the contact shadow are
+drawn at the same row in every phase, so a ridge of mountains stands on one
+horizon rather than reading as peaks at different altitudes, and the rock and
+snow tones are the shipped tile's throughout (they were authored under the value
+ceiling and a phase is not the place to re-open that).
 
 Note the game's `make tiles` rebuilds its atlases from its own PixVoxel
 pipeline and would overwrite installed atlases; the per-cell exports exist so

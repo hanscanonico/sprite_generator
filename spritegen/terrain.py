@@ -310,14 +310,46 @@ def woods(open_edges: int = 0) -> Image.Image:
     return t
 
 
-def mountain() -> Image.Image:
+# Phase variants for the mountain — the sea's rule (SEA_PHASES below) applied
+# to the board's most silhouette-dominant tile, because a range is a wall of
+# identical peaks wherever one is repeated. An entry is (peaks, ridges, zig
+# seed): where the massif's three summits stand as (apex x, apex y, slope) —
+# summit first, then shoulder, then the low foothill, which is the order the
+# snow line is read off — the ridge lines and cracks that hang under them, and
+# the seed of the per-column snow line. Nothing else
+# varies — the ground line and the contact shadow are drawn at a fixed row in
+# every phase, so a range sits on one horizon, and the rock and snow tones are
+# the tile's throughout (they were authored under the value ceiling). Phase 0
+# is the atlas column, so a board that has not adopted the sheet is unchanged.
+MOUNTAIN_PHASES: tuple[
+    tuple[tuple[tuple[int, int, float], ...], tuple[tuple[int, int, int], ...], int],
+    ...,
+] = (
+    (
+        ((26, 10, 1.2), (46, 27, 1.3), (11, 36, 1.5)),
+        ((26, 17, 32), (18, 34, 10), (34, 30, 8), (46, 34, 16), (11, 41, 9)),
+        7,
+    ),
+    (
+        ((38, 11, 1.25), (17, 26, 1.35), (53, 35, 1.45)),
+        ((38, 18, 30), (29, 33, 9), (45, 31, 8), (17, 33, 15), (53, 42, 9)),
+        11,
+    ),
+    (
+        ((21, 12, 1.15), (43, 25, 1.35), (54, 38, 1.5)),
+        ((21, 19, 30), (13, 33, 10), (32, 32, 8), (43, 32, 15), (54, 45, 7)),
+        13,
+    ),
+)
+
+
+def mountain(phase: int = 0) -> Image.Image:
     """A painted three-peak massif: light/dark faces split at each ridge,
     jagged dithered snow caps, altitude banding down to a talus skirt."""
+    peaks, ridges, zig_seed = MOUNTAIN_PHASES[phase]
     t = _ground(GRASS, 4)
     px = t.load()
     base_y = 56
-    # (apex_x, apex_y, slope) — summit, right shoulder, low left foothill
-    peaks = ((26, 10, 1.2), (46, 27, 1.3), (11, 36, 1.5))
     rock_hi = (166, 161, 153)
     rock_lt = (148, 144, 137)
     rock_dk = (117, 113, 108)
@@ -336,7 +368,7 @@ def mountain() -> Image.Image:
         ax, ay, _s = peaks[owner]
         lit = x <= ax
         # jagged snow line per column; only the two tall peaks hold snow
-        zig = (x * 7) % 3 + ((x // 3) % 2) * 3
+        zig = (x * zig_seed) % 3 + ((x // 3) % 2) * 3
         snow_until = ay + 6 + zig if owner < 2 else y_top
         mid = (y_top + base_y) // 2
         for y in range(y_top, base_y):
@@ -354,13 +386,7 @@ def mountain() -> Image.Image:
                 c = rock_lt if lit else rock_dk
             px[x, y] = (*c, 255)
     # ridge lines below the apexes and a few cracks
-    for x, y0, ln in (
-        (26, 17, 32),
-        (18, 34, 10),
-        (34, 30, 8),
-        (46, 34, 16),
-        (11, 41, 9),
-    ):
+    for x, y0, ln in ridges:
         for y in range(y0, min(base_y - 1, y0 + ln)):
             if px[x, y][3] == 255 and px[x, y][:3] in (rock_hi, rock_lt, rock_dk):
                 px[x, y] = (*mix(rock_dk, edge, 0.5), 255)

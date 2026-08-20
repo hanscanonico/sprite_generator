@@ -22,6 +22,7 @@ from .terrain import (
     CELL,
     E,
     GRASS_DARK,
+    MOUNTAIN_PHASES,
     N,
     PLAINS_PHASES,
     ROAD,
@@ -40,6 +41,7 @@ from .terrain import (
     _ground,
     _lit,
     _rect,
+    mountain,
     plains,
     sea,
     woods,
@@ -424,6 +426,19 @@ def bridge_sheet() -> Image.Image:
     return sheet([bridge_tile(True), bridge_tile(False)], 2)
 
 
+def mountain_sheet() -> Image.Image:
+    """The mountain's phase variants, left to right, phase 0 first.
+
+    The sheet contract the sea and the field already use, on the tile a range
+    repeats most visibly: the peaks stand somewhere else in each phase while the
+    ground line under them does not, so a ridge of them reads as a range on one
+    horizon. Phase 0 is the atlas mountain column byte for byte.
+    """
+    return sheet(
+        [mountain(phase) for phase in range(len(MOUNTAIN_PHASES))], len(MOUNTAIN_PHASES)
+    )
+
+
 def plains_sheet() -> Image.Image:
     """The field's phase variants, left to right, phase 0 first.
 
@@ -431,7 +446,9 @@ def plains_sheet() -> Image.Image:
     one tile repeats at is the tile, so the fix is more than one tile and a rule
     for choosing between them. Phase 0 is the atlas plains column byte for byte.
     """
-    return sheet([plains(phase) for phase in range(len(PLAINS_PHASES))], len(PLAINS_PHASES))
+    return sheet(
+        [plains(phase) for phase in range(len(PLAINS_PHASES))], len(PLAINS_PHASES)
+    )
 
 
 def sea_sheet() -> Image.Image:
